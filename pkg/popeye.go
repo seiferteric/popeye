@@ -74,6 +74,7 @@ type (
 		flags        *config.Flags
 		builder      *report.Builder
 		aliases      *internal.Aliases
+		Builder      *report.Builder
 	}
 )
 
@@ -93,6 +94,7 @@ func NewPopeye(flags *config.Flags, log *zerolog.Logger) (*Popeye, error) {
 		aliases: a,
 		builder: report.NewBuilder(a),
 	}
+	p.Builder = p.builder
 
 	return &p, nil
 }
@@ -146,7 +148,8 @@ func (p *Popeye) Sanitize() error {
 		return err
 	}
 
-	return p.dump(true)
+	// return p.dump(true)
+	return nil
 }
 
 func (p *Popeye) dumpJunit() error {
