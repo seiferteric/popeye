@@ -2,6 +2,7 @@ package popeye
 
 import (
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	// "github.com/derailed/popeye/internal/report"
 	"github.com/derailed/popeye/pkg"
 	"github.com/derailed/popeye/pkg/config"
@@ -16,16 +17,17 @@ func NewPlugin() *pkg.Popeye {
 	flags := config.NewFlags()
 
 
-	flags.AllNamespaces = true
+	f := true
+	flags.AllNamespaces = &f
 	pop, err := pkg.NewPopeye(flags, &log.Logger)
 	if err != nil {
-		bomb(fmt.Sprintf("Popeye configuration load failed %v", err))
+		return nil
 	}
 	if err := pop.Init(); err != nil {
-		bomb(err.Error())
+		return nil
 	}
 	if err := pop.Sanitize(); err != nil {
-		bomb(err.Error())
+		return nil
 	}
 	return pop
 }
