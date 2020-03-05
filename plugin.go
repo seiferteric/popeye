@@ -1,6 +1,6 @@
 package popeye
 
-type Popeye struct {
+type Plugin struct {
 	Name string
 }
 
