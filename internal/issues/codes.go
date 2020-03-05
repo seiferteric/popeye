@@ -48,6 +48,7 @@ codes:
   100:
     message:  Untagged docker image in use
     severity: 3
+    tailwindseverity: 22
   101:
     message:  Image tagged "latest" in use
     severity: 2
@@ -81,9 +82,11 @@ codes:
   111:
     message:  CPU Current/Limit (%s/%s) reached user %d%% threshold (%d%%)
     severity: 3
+    tailwindseverity: 23
   112:
     message:  Memory Current/Limit (%s/%s) reached user %d%% threshold (%d%%)
     severity: 3
+    tailwindseverity: 24
 
   # -------------------------------------------------------------------------
   # Pod
@@ -96,12 +99,15 @@ codes:
   202:
     message:  Pod is waiting [%d/%d]
     severity: 3
+    tailwindseverity: 8
   203:
     message:  Pod is waiting [%d/%d] %s
     severity: 3
+    tailwindseverity: 9
   204:
     message:  Pod is not ready [%d/%d]
     severity: 3
+    tailwindseverity: 7
   205:
     message:  Pod was restarted (%d) %s
     severity: 2
@@ -111,6 +117,7 @@ codes:
   207:
     message:  Pod is in an unhappy phase (%s)
     severity: 3
+    tailwindseverity: 6
 
   # -------------------------------------------------------------------------
   # Security
@@ -129,9 +136,11 @@ codes:
   304:
     message: References a secret "%s" which does not exist
     severity: 3
+    tailwindseverity: 20
   305:
     message: References a docker-image "%s" pull secret which does not exist
     severity: 3
+    tailwindseverity: 21
   306:
     message: Container could be running as root user. Check SecurityContext/Image
     severity: 2
@@ -187,9 +196,11 @@ codes:
   600:
     message:  HPA %s references a Deployment %s which does not exist
     severity: 3
+    tailwindseverity: 10
   601:
     message:  HPA %s references a StatefulSet %s which does not exist
     severity: 3
+    tailwindseverity: 11
   602:
     message:  Replicas (%d/%d) at burst will match/exceed cluster CPU(%s) capacity by %s
     severity: 2
@@ -211,12 +222,15 @@ codes:
   701:
     message:  Node is in an unknown condition
     severity: 3
+    tailwindseverity: 2
   702:
     message:  Node is not in ready state
     severity: 3
+    tailwindseverity: 3
   703:
     message:  Out of disk space
     severity: 3
+    tailwindseverity: 4
   704:
     message:  Insuficient memory
     severity: 2
@@ -226,9 +240,11 @@ codes:
   706:
     message:  Insuficient PIDS on Node
     severity: 3
+    tailwindseverity: 5
   707:
     message:  No network configured on node
     severity: 3
+    tailwindseverity: 1
   708:
     message:  No node metrics available
     severity: 1
@@ -244,6 +260,7 @@ codes:
   800:
     message:  Namespace is inactive
     severity: 3
+    tailwindseverity: 12
   # PodDisruptionBudget
   900:
     message:  Used? No pods match selector
@@ -257,21 +274,26 @@ codes:
   1001:
     message:  Pending volume detected
     severity: 3
+    tailwindseverity: 13
   1002:
     message:  Lost volume detected
     severity: 3
+    tailwindseverity: 14
   1003:
     message:  Pending claim detected
     severity: 3
+    tailwindseverity: 15
   1004:
     message:  Lost claim detected
     severity: 3
+    tailwindseverity: 16
 
   # -------------------------------------------------------------------------
   # Service
   1100:
     message:  No pods match service selector
     severity: 3
+    tailwindseverity: 17
   1101:
     message:  Skip ports check. No explicit ports detected on pod %s
     severity: 1
@@ -287,9 +309,11 @@ codes:
   1105:
     message:  No associated endpoints
     severity: 3
+    tailwindseverity: 18
   1106:
     message:  "No target ports match service port %s"
     severity: 3
+    tailwindseverity: 19
 
   # -------------------------------------------------------------------------
   # NetworkPolicies
