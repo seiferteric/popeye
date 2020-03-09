@@ -23,7 +23,7 @@ type (
 	Code struct {
 		Message  string `yaml:"message"`
 		Severity Level  `yaml:"severity"`
-		Tailwindseverity Level `tailwindseverity:"tailwindseverity"`
+		TailwindSeverity Level `yaml:"tailwindseverity"`
 	}
 
 	// AllocationLimits tracks limit thresholds cpu and memory thresholds.

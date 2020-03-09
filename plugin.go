@@ -6,13 +6,18 @@ import (
 	// "github.com/derailed/popeye/internal/report"
 	"github.com/derailed/popeye/pkg"
 	"github.com/derailed/popeye/pkg/config"
+	"github.com/derailed/popeye/internal/issues"
+	"fmt"
+	"strings"
+	"strconv"
 )
 
-type Plugin struct {
+type PopeyePlugin struct {
 	Name string
+	Pop *pkg.Popeye
 }
 
-func NewPlugin() *pkg.Popeye {
+func NewPlugin() *PopeyePlugin {
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	flags := config.NewFlags()
 
@@ -29,5 +34,60 @@ func NewPlugin() *pkg.Popeye {
 	if err := pop.Sanitize(); err != nil {
 		return nil
 	}
-	return pop
+	pop.Builder.ToJSON()
+	
+	plug := PopeyePlugin{}
+	plug.Pop = pop
+	return &plug
+}
+
+func (p *PopeyePlugin) PrintErrors() {
+	// for _,s := range p.Pop.Builder.Report.Sections {
+	// 	for _,i := range s.Outcome {
+	// 		for _,k := range i {
+	// 			fmt.Println(k.Message)
+	// 		}
+	// 	}
+	// }
+	codes, _ := issues.LoadCodes()
+	fmt.Println("------------------------------------------")
+    for _,s := range p.Pop.Builder.Report.Sections {
+
+        for k,v := range s.Outcome {
+            for _,issue := range v {
+                if(issue.Level == 3) {
+                        // fmt.Println("Error: ", s.Title, k, issue.Message)
+                        PopeyToAction(s.Title, k, issue.Message, codes)
+                }
+            }
+        }
+    }
+
+}
+
+
+
+func PopeyCodeFromMsg(msg string) (config.ID,string,error) {
+        if msg[0] != '[' {
+                return 0,msg,fmt.Errorf("No Code Found")
+        }
+        stop := strings.IndexByte(msg, ']')
+        imsg,err := strconv.Atoi(msg[5:stop])
+        if err != nil {
+                return 0,msg,err
+        }
+        return config.ID(imsg),msg[stop+2:],nil
+}
+func PopeyToAction(section string, item string, msg string, codes *issues.Codes) {
+
+
+    fmt.Println(section, item, " Error:")
+    code, new_msg, err := PopeyCodeFromMsg(msg)
+    if err == nil {
+            fmt.Println(new_msg)
+            fmt.Println("\tTailwinds Severity:", codes.Glossary[code].TailwindSeverity)
+    } else {
+            fmt.Errorf(err.Error())
+    }
+        
 }
