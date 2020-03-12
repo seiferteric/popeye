@@ -58,7 +58,6 @@ func (p *PopeyePlugin) PrintErrors(w *tabwriter.Writer) {
 }
 
 
-
 func PopeyCodeFromMsg(msg string) (config.ID,string,error) {
         if msg[0] != '[' {
                 return 0,msg,fmt.Errorf("No Code Found")

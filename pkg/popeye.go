@@ -260,6 +260,9 @@ func (p *Popeye) dump(printHeader bool) error {
 
 	return err
 }
+func (p *Popeye) Dump(printHeader bool) error {
+	return p.dump(printHeader)
+}
 
 func (p *Popeye) sanitizers() map[string]scrubFn {
 	return map[string]scrubFn{
