@@ -10,7 +10,8 @@ import (
 	"fmt"
 	"strings"
 	"strconv"
-	"text/tabwriter"
+	// "text/tabwriter"
+	"github.com/olekukonko/tablewriter"
 )
 
 type PopeyePlugin struct {
@@ -42,18 +43,21 @@ func NewPlugin() *PopeyePlugin {
 	return &plug
 }
 
-func (p *PopeyePlugin) PrintErrors(w *tabwriter.Writer) {
+func (p *PopeyePlugin) PrintErrors(w *tablewriter.Table) {
 	codes, _ := issues.LoadCodes()
+	w.SetHeader([]string{"Section", "Item", "Severity", "Message"})
     for _,s := range p.Pop.Builder.Report.Sections {
 
         for k,v := range s.Outcome {
             for _,issue := range v {
                 if(issue.Level == 3) {
-                    PopeyToAction(w, s.Title, k, issue.Message, codes)
+                    row := PopeyToAction(s.Title, k, issue.Message, codes)
+                    w.Append(row)
                 }
             }
         }
     }
+    w.Render()
 
 }
 
@@ -69,17 +73,15 @@ func PopeyCodeFromMsg(msg string) (config.ID,string,error) {
         }
         return config.ID(imsg),msg[stop+2:],nil
 }
-func PopeyToAction(w *tabwriter.Writer, section string, item string, msg string, codes *issues.Codes) {
-
-	
-
+func PopeyToAction(section string, item string, msg string, codes *issues.Codes) []string{
     
     code, new_msg, err := PopeyCodeFromMsg(msg)
     if err == nil {
-    		fmt.Fprintln(w, section, item, "Error:")
-            fmt.Fprintf(w, "Severity: %v : %v\n\n", codes.Glossary[code].TailwindSeverity, new_msg)
+    		// fmt.Fprintln(w, section, item, "Error:")
+            // fmt.Fprintf(w, "Severity: %v : %v\n\n", codes.Glossary[code].TailwindSeverity, new_msg)
+            return []string{section, item, strconv.Itoa(int(codes.Glossary[code].TailwindSeverity)), new_msg}
     } else {
             fmt.Errorf(err.Error())
     }
-        
+    return []string{}
 }
