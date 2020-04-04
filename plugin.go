@@ -12,6 +12,7 @@ import (
 	"strconv"
 	// "text/tabwriter"
 	"github.com/olekukonko/tablewriter"
+        "sort"
 )
 
 type PopeyePlugin struct {
@@ -44,18 +45,29 @@ func NewPlugin() *PopeyePlugin {
 }
 
 func (p *PopeyePlugin) PrintErrors(w *tablewriter.Table) {
-	codes, _ := issues.LoadCodes()
-	w.SetHeader([]string{"Section", "Item", "Severity", "Message"})
+    codes, _ := issues.LoadCodes()
+    w.SetHeader([]string{"Section", "Item", "Priority", "Message"})
+    rows := make(map[int][][]string)
     for _,s := range p.Pop.Builder.Report.Sections {
 
         for k,v := range s.Outcome {
             for _,issue := range v {
                 if(issue.Level == 3) {
                     row := PopeyToAction(s.Title, k, issue.Message, codes)
-                    w.Append(row)
+                    //w.Append(row)
+                    code,_ := strconv.Atoi(row[2])
+                    rows[code] = append(rows[code],row)
                 }
             }
         }
+    }
+    keys := make([]int, 0)
+    for k, _ := range rows {
+        keys = append(keys, k)
+    }
+    sort.Ints(keys)
+    for _, k := range keys {
+        w.AppendBulk(rows[k])
     }
     w.Render()
 
