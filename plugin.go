@@ -54,9 +54,11 @@ func (p *PopeyePlugin) PrintErrors(w *tablewriter.Table) {
             for _,issue := range v {
                 if(issue.Level == 3) {
                     row := PopeyToAction(s.Title, k, issue.Message, codes)
-                    //w.Append(row)
-                    code,_ := strconv.Atoi(row[2])
-                    rows[code] = append(rows[code],row)
+                    if len(row) == 4 {
+                        //w.Append(row)
+                        code,_ := strconv.Atoi(row[2])
+                        rows[code] = append(rows[code],row)
+                    }
                 }
             }
         }
