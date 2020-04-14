@@ -3,16 +3,14 @@ package popeye
 import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	// "github.com/derailed/popeye/internal/report"
 	"github.com/derailed/popeye/pkg"
 	"github.com/derailed/popeye/pkg/config"
 	"github.com/derailed/popeye/internal/issues"
 	"fmt"
 	"strings"
 	"strconv"
-	// "text/tabwriter"
 	"github.com/olekukonko/tablewriter"
-        "sort"
+    "sort"
 )
 
 type PopeyePlugin struct {
@@ -20,24 +18,20 @@ type PopeyePlugin struct {
 	Pop *pkg.Popeye
 }
 
-func NewPlugin() *PopeyePlugin {
+func NewPlugin(cluster *string) *PopeyePlugin {
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	flags := config.NewFlags()
 
 
 	f := true
 	flags.AllNamespaces = &f
+	if cluster != nil {
+		flags.ClusterName = cluster
+	}
 	pop, err := pkg.NewPopeye(flags, &log.Logger)
 	if err != nil {
 		return nil
 	}
-	if err := pop.Init(); err != nil {
-		return nil
-	}
-	if err := pop.Sanitize(); err != nil {
-		return nil
-	}
-	pop.Builder.ToJSON()
 	
 	plug := PopeyePlugin{}
 	plug.Pop = pop
@@ -45,6 +39,13 @@ func NewPlugin() *PopeyePlugin {
 }
 
 func (p *PopeyePlugin) PrintErrors(w *tablewriter.Table) {
+	if err := p.Pop.Init(); err != nil {
+		return
+	}
+	if err := p.Pop.Sanitize(); err != nil {
+		return
+	}
+	p.Pop.Builder.ToJSON()
     codes, _ := issues.LoadCodes()
     w.SetHeader([]string{"Section", "Item", "Priority", "Message"})
     rows := make(map[int][][]string)

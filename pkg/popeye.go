@@ -75,6 +75,8 @@ type (
 		builder      *report.Builder
 		aliases      *internal.Aliases
 		Builder      *report.Builder
+		Config       *config.Config
+		Client       *k8s.Client
 	}
 )
 
@@ -95,6 +97,8 @@ func NewPopeye(flags *config.Flags, log *zerolog.Logger) (*Popeye, error) {
 		builder: report.NewBuilder(a),
 	}
 	p.Builder = p.builder
+	p.Config = p.config
+	p.Client = p.client
 
 	return &p, nil
 }
