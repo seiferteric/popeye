@@ -38,6 +38,17 @@ func NewPlugin(cluster *string) *PopeyePlugin {
 	return &plug
 }
 
+func (p *PopeyePlugin) PrintDump() {
+	if err := p.Pop.Init(); err != nil {
+		return
+	}
+	if err := p.Pop.Sanitize(); err != nil {
+		return
+	}
+	p.Pop.Builder.ToJSON()
+	p.Pop.Dump(true)
+}
+
 func (p *PopeyePlugin) PrintErrors(w *tablewriter.Table) {
 	if err := p.Pop.Init(); err != nil {
 		return
