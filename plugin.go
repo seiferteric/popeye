@@ -11,7 +11,17 @@ import (
 	"strconv"
 	"github.com/olekukonko/tablewriter"
 	"sort"
+	"encoding/json"
 )
+
+type tally struct {
+	OK    int `yaml:"ok"`
+	Info  int `yaml:"info"`
+	Warn  int `yaml:"warning"`
+	Error int `yaml:"error"`
+	Score int `yaml:"score"`
+}
+
 
 type Error struct {
 	Type       string `json:"type"`
@@ -68,18 +78,25 @@ func (p *PopeyePlugin) GettExpeditionCLIAndUIVisibilityReport() string {
 	return k
 }
 
-func (p *PopeyePlugin) GetExpeditionCLIAndUIVisibilityErrors() []*Error {
+func (p *PopeyePlugin) GetExpeditionCLIAndUIVisibilityErrors() ([]*Error, int, int) {
+	var totalSanitizeCnt int
+	var totalErrorCnt int
 	result := make([]*Error, 0)
 	if err := p.Pop.Init(); err != nil {
-		return nil
+		return nil, 0, 0
 	}
 	if err := p.Pop.Sanitize(); err != nil {
-		return nil
+		return nil, 0, 0
 	}
 	p.Pop.Builder.ToJSON()
 	codes, _ := issues.LoadCodes()
 	rows := make(map[int][]*Error)
 	for _,s := range p.Pop.Builder.Report.Sections {
+		output, _ := s.Tally.MarshalJSON()
+		var t tally
+		json.Unmarshal(output, &t)
+		totalSanitizeCnt += (t.OK + t.Info + t.Warn + t.Error)
+		totalErrorCnt += t.Error
 		for k,v := range s.Outcome {
 			for _,issue := range v {
 				if(issue.Level == 3) {
@@ -108,7 +125,7 @@ func (p *PopeyePlugin) GetExpeditionCLIAndUIVisibilityErrors() []*Error {
 			result = append(result, err)
 		}
 	}
-	return result
+	return result, totalSanitizeCnt, totalErrorCnt
 }
 
 func (p *PopeyePlugin) GetHappyCLIVisibilityErrors(w *tablewriter.Table) {
