@@ -12,6 +12,9 @@ import (
 	"github.com/olekukonko/tablewriter"
 	"sort"
 	"encoding/json"
+	"bufio"
+	"bytes"
+	"github.com/derailed/popeye/internal/report"
 )
 
 type tally struct {
@@ -63,7 +66,7 @@ func (p *PopeyePlugin) GetHappyCLIVisibilityReport() {
 	if err := p.Pop.Sanitize(); err != nil {
 		return
 	}
-	p.Pop.Builder.ToJSON()
+
 	p.Pop.Dump(true)
 }
 
@@ -74,8 +77,25 @@ func (p *PopeyePlugin) GettExpeditionCLIAndUIVisibilityReport() string {
 	if err := p.Pop.Sanitize(); err != nil {
 		return ""
 	}
-	k, _ := p.Pop.Builder.ToJSON()
-	return k
+
+	var (
+		buf bytes.Buffer
+		w = bufio.NewWriter(&buf)
+		s = report.NewSanitizer(w, false)
+	)
+
+	/*
+	p.Pop.Builder.PrintHeader(s)
+	mx, err := p.Pop.Client.ClusterHasMetrics()
+	if err != nil {
+		mx = false
+	}*/
+
+	//p.Pop.Builder.PrintClusterInfo(s, p.Pop.Client.ActiveCluster(), mx)
+	p.Pop.Builder.PrintReport(config.Level(p.Pop.Config.LinterLevel()), s)
+	//p.Pop.Builder.PrintSummary(s)
+	returnStr := buf.String()
+	return returnStr
 }
 
 func (p *PopeyePlugin) GetExpeditionCLIAndUIVisibilityErrors() ([]*Error, int, int) {
