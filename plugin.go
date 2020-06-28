@@ -40,6 +40,7 @@ type PopeyePlugin struct {
 }
 
 func NewPlugin(cluster *string) *PopeyePlugin {
+	fmt.Println(*cluster)
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	flags := config.NewFlags()
 
@@ -47,7 +48,10 @@ func NewPlugin(cluster *string) *PopeyePlugin {
 	f := true
 	flags.AllNamespaces = &f
 	if cluster != nil {
-		flags.ClusterName = cluster
+		//Setting the context instead of clustername.
+		//TODO: Remove following commented line in future.
+		//flags.ClusterName = cluster
+		flags.Context = cluster
 	}
 	pop, err := pkg.NewPopeye(flags, &log.Logger)
 	if err != nil {
