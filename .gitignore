@@ -1,6 +1,7 @@
 /k8s/*
 !/k8s/popeye/
 /k8s1
+krew
 *.out
 /execs
 *.test
@@ -13,3 +14,6 @@ gen.sh
 aa_dead
 popeye
 /junit
+.vscode
+.idea
+spinach.yml

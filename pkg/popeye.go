@@ -8,58 +8,54 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
+	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/derailed/popeye/internal"
+	"github.com/derailed/popeye/internal/client"
 	"github.com/derailed/popeye/internal/issues"
-	"github.com/derailed/popeye/internal/k8s"
 	"github.com/derailed/popeye/internal/report"
-	"github.com/derailed/popeye/internal/sanitize"
 	"github.com/derailed/popeye/internal/scrub"
 	"github.com/derailed/popeye/pkg/config"
+	"github.com/derailed/popeye/types"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
-var (
-	// LogFile the path to our logs.
-	LogFile = filepath.Join(os.TempDir(), fmt.Sprintf("popeye.log"))
-	// DumpDir indicates a directory location for sanitixer reports.
-	DumpDir = dumpDir()
-)
-
 const outFmt = "sanitizer_%s_%d.%s"
 
-func (p *Popeye) fileName() string {
-	return fmt.Sprintf(outFmt, p.client.ActiveCluster(), time.Now().UnixNano(), p.fileExt())
+var (
+	// LogFile the path to our logs.
+	LogFile = filepath.Join(os.TempDir(), "popeye.log")
+	// DumpDir indicates a directory location for sanitizer reports.
+	DumpDir = dumpDir()
+	// ErrUnknownS3BucketProtocol defines the error if we can't parse the S3 URI
+	ErrUnknownS3BucketProtocol = errors.New("invalid S3 URI: hostname not valid")
+)
+
+type scrubFn func(context.Context, *scrub.Cache, *issues.Codes) scrub.Sanitizer
+
+type run struct {
+	outcome issues.Outcome
+	gvr     client.GVR
 }
 
-func (p *Popeye) fileExt() string {
-	switch *p.flags.Output {
-	case "json":
-		return "json"
-	case "junit":
-		return "xml"
-	case "yaml":
-		return "yml"
-	case "html":
-		return "html"
-	default:
-		return "txt"
-	}
-}
-
-func dumpDir() string {
-	if d := os.Getenv("POPEYE_REPORT_DIR"); d != "" {
-		return d
-	}
-	return filepath.Join(os.TempDir(), "popeye")
+// Popeye represents a kubernetes linter/sanitizer.
+type Popeye struct {
+	factory      types.Factory
+	config       *config.Config
+	outputTarget io.ReadWriteCloser
+	log          *zerolog.Logger
+	flags        *config.Flags
+	builder      *report.Builder
+	aliases      *internal.Aliases
 }
 
 type (
@@ -81,20 +77,18 @@ type (
 )
 
 // NewPopeye returns a new sanitizer.
+// NewPopeye returns a new instance.
 func NewPopeye(flags *config.Flags, log *zerolog.Logger) (*Popeye, error) {
 	cfg, err := config.NewConfig(flags)
 	if err != nil {
 		return nil, err
 	}
 
-	a := internal.NewAliases()
 	p := Popeye{
-		client:  k8s.NewClient(flags),
 		config:  cfg,
 		log:     log,
 		flags:   flags,
-		aliases: a,
-		builder: report.NewBuilder(a),
+		builder: report.NewBuilder(),
 	}
 	p.Builder = p.builder
 	p.Config = p.config
@@ -105,18 +99,123 @@ func NewPopeye(flags *config.Flags, log *zerolog.Logger) (*Popeye, error) {
 
 // Init configures popeye prior to sanitization.
 func (p *Popeye) Init() error {
+	if p.factory == nil {
+		if err := p.initFactory(); err != nil {
+			return err
+		}
+	}
+	p.aliases = internal.NewAliases()
+	if err := p.aliases.Init(p.factory, p.scannedGVRs()); err != nil {
+		return err
+	}
+
 	if !isSet(p.flags.Save) {
 		return p.ensureOutput()
 	}
-
 	if err := ensurePath(DumpDir, 0755); err != nil {
 		return err
 	}
+
 	return p.ensureOutput()
 }
 
+// SetFactory sets the resource factory.
+func (p *Popeye) SetFactory(f types.Factory) {
+	p.factory = f
+}
+
+func (p *Popeye) scannedGVRs() []string {
+	return []string{
+		"v1/limitranges",
+		"v1/services",
+		"v1/endpoints",
+		"v1/nodes",
+		"v1/namespaces",
+		"v1/pods",
+		"v1/configmaps",
+		"v1/secrets",
+		"v1/serviceaccounts",
+		"v1/persistentvolumes",
+		"v1/persistentvolumeclaims",
+		"apps/v1/deployments",
+		"apps/v1/replicasets",
+		"apps/v1/daemonsets",
+		"apps/v1/statefulsets",
+		"policy/v1beta1/poddisruptionbudgets",
+		"policy/v1beta1/podsecuritypolicies",
+		"extensions/v1beta1/ingresses",
+		"networking.k8s.io/v1/networkpolicies",
+		"autoscaling/v1/horizontalpodautoscalers",
+		"rbac.authorization.k8s.io/v1/clusterroles",
+		"rbac.authorization.k8s.io/v1/clusterrolebindings",
+		"rbac.authorization.k8s.io/v1/roles",
+		"rbac.authorization.k8s.io/v1/rolebindings",
+	}
+}
+
+func (p *Popeye) initFactory() error {
+	clt := client.InitConnectionOrDie(client.NewConfig(p.flags.ConfigFlags))
+	f := client.NewFactory(clt)
+	p.factory = f
+
+	if p.flags.StandAlone {
+		return nil
+	}
+	ns := client.AllNamespaces
+	if p.flags.ConfigFlags.Namespace != nil {
+		ns = *p.flags.ConfigFlags.Namespace
+	}
+
+	f.Start(ns)
+	for _, gvr := range p.scannedGVRs() {
+		ok, err := clt.CanI(client.AllNamespaces, gvr, types.ReadAllAccess)
+		if !ok || err != nil {
+			return fmt.Errorf("Current user does not have read access for resource %q -- %v", gvr, err)
+		}
+		if _, err := f.ForResource(client.AllNamespaces, gvr); err != nil {
+			return err
+		}
+	}
+	f.WaitForCacheSync()
+
+	return nil
+}
+
+func (p *Popeye) sanitizers() map[string]scrubFn {
+	return map[string]scrubFn{
+		"cluster":                   scrub.NewCluster,
+		"v1/configmaps":             scrub.NewConfigMap,
+		"v1/namespaces":             scrub.NewNamespace,
+		"v1/nodes":                  scrub.NewNode,
+		"v1/pods":                   scrub.NewPod,
+		"v1/persistentvolumes":      scrub.NewPersistentVolume,
+		"v1/persistentvolumeclaims": scrub.NewPersistentVolumeClaim,
+		"v1/secrets":                scrub.NewSecret,
+		"v1/services":               scrub.NewService,
+		"v1/serviceaccounts":        scrub.NewServiceAccount,
+		"apps/v1/daemonsets":        scrub.NewDaemonSet,
+		"apps/v1/deployments":       scrub.NewDeployment,
+		"apps/v1/replicasets":       scrub.NewReplicaSet,
+		"apps/v1/statefulsets":      scrub.NewStatefulSet,
+		"autoscaling/v1/horizontalpodautoscalers":          scrub.NewHorizontalPodAutoscaler,
+		"extensions/v1beta1/ingresses":                     scrub.NewIngress,
+		"networking.k8s.io/v1/networkpolicies":             scrub.NewNetworkPolicy,
+		"policy/v1beta1/poddisruptionbudgets":              scrub.NewPodDisruptionBudget,
+		"policy/v1beta1/podsecuritypolicies":               scrub.NewPodSecurityPolicy,
+		"rbac.authorization.k8s.io/v1/clusterroles":        scrub.NewClusterRole,
+		"rbac.authorization.k8s.io/v1/clusterrolebindings": scrub.NewClusterRoleBinding,
+		"rbac.authorization.k8s.io/v1/roles":               scrub.NewRole,
+		"rbac.authorization.k8s.io/v1/rolebindings":        scrub.NewRoleBinding,
+	}
+}
+
+// SetOutputTarget sets up a new output stream writer.
+func (p *Popeye) SetOutputTarget(s io.ReadWriteCloser) {
+	p.outputTarget = s
+}
+
 // Sanitize scans a cluster for potential issues.
-func (p *Popeye) Sanitize() error {
+func (p *Popeye) Sanitize() (int, error) {
 	defer func() {
 		switch {
 		case isSet(p.flags.Save):
@@ -124,6 +223,10 @@ func (p *Popeye) Sanitize() error {
 				log.Fatal().Err(err).Msg("Closing report")
 			}
 		case isSetStr(p.flags.S3Bucket):
+			bucket, key, err := parseBucket(*p.flags.S3Bucket)
+			if err != nil {
+				log.Fatal().Err(err).Msg("Parse S3 bucket URI")
+			}
 			// Create a single AWS session (we can re use this if we're uploading many files)
 			s, err := session.NewSession(&aws.Config{
 				LogLevel: aws.LogLevel(aws.LogDebugWithRequestErrors)})
@@ -134,8 +237,8 @@ func (p *Popeye) Sanitize() error {
 			uploader := s3manager.NewUploader(s)
 			// Upload input parameters
 			upParams := &s3manager.UploadInput{
-				Bucket: p.flags.S3Bucket,
-				Key:    aws.String(p.fileName()),
+				Bucket: aws.String(bucket),
+				Key:    aws.String(key + "/" + p.fileName()),
 				Body:   p.outputTarget,
 			}
 
@@ -143,17 +246,80 @@ func (p *Popeye) Sanitize() error {
 			if _, err = uploader.Upload(upParams); err != nil {
 				log.Fatal().Err(err).Msg("S3 Upload")
 			}
-
-		default:
 		}
 	}()
 
-	if err := p.sanitize(); err != nil {
-		return err
+	errCount, err := p.sanitize()
+	if err != nil {
+		return 0, err
 	}
 
-	// return p.dump(true)
-	return nil
+	return errCount, p.dump(true)
+}
+
+func (p *Popeye) sanitize() (int, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ctx = context.WithValue(ctx, internal.KeyOverAllocs, *p.flags.CheckOverAllocs)
+	ctx = context.WithValue(ctx, internal.KeyFactory, p.factory)
+
+	codes, err := issues.LoadCodes()
+	if err != nil {
+		return 0, err
+	}
+	codes.Refine(p.config.Codes)
+
+	c := make(chan run, 2)
+	var total, errCount int
+	var nodeGVR = client.NewGVR("v1/nodes")
+	cache := scrub.NewCache(p.factory, p.config)
+	for k, fn := range p.sanitizers() {
+		gvr := client.NewGVR(k)
+		if p.aliases.Exclude(gvr, p.config.Sections()) {
+			continue
+		}
+
+		// Skip node sanitizer if active namespace is set.
+		if gvr == nodeGVR && p.factory.Client().ActiveNamespace() != client.AllNamespaces {
+			continue
+		}
+		total++
+		ctx = context.WithValue(ctx, internal.KeyRunInfo, internal.RunInfo{Section: gvr.R(), SectionGVR: gvr})
+		go p.sanitizer(ctx, gvr, fn, c, cache, codes)
+	}
+
+	if total == 0 {
+		return 0, nil
+	}
+
+	for run := range c {
+		tally := report.NewTally()
+		tally.Rollup(run.outcome)
+		errCount += tally.ErrCount()
+		p.builder.AddSection(run.gvr, p.aliases.Singular(run.gvr), run.outcome, tally)
+		total--
+		if total == 0 {
+			close(c)
+		}
+	}
+
+	return errCount, nil
+}
+
+func (p *Popeye) sanitizer(ctx context.Context, gvr client.GVR, f scrubFn, c chan run, cache *scrub.Cache, codes *issues.Codes) {
+	defer func() {
+		if e := recover(); e != nil {
+			log.Error().Msgf("Popeye CHOCKED! %#v", e)
+			log.Error().Msgf("%v", string(debug.Stack()))
+		}
+	}()
+
+	resource := f(ctx, cache, codes)
+	if err := resource.Sanitize(ctx); err != nil {
+		p.builder.AddError(err)
+	}
+	o := resource.Outcome().Filter(config.Level(p.config.LinterLevel()))
+	c <- run{gvr: gvr, outcome: o}
 }
 
 func (p *Popeye) dumpJunit() error {
@@ -218,11 +384,8 @@ func (p *Popeye) dumpStd(mode, header bool) error {
 	if header {
 		p.builder.PrintHeader(s)
 	}
-	mx, err := p.client.ClusterHasMetrics()
-	if err != nil {
-		mx = false
-	}
-	p.builder.PrintClusterInfo(s, p.client.ActiveCluster(), mx)
+	mx := p.factory.Client().HasMetrics()
+	p.builder.PrintClusterInfo(s, p.factory.Client().ActiveCluster(), mx)
 	p.builder.PrintReport(config.Level(p.config.LinterLevel()), s)
 	p.builder.PrintSummary(s)
 
@@ -232,7 +395,7 @@ func (p *Popeye) dumpStd(mode, header bool) error {
 func (p *Popeye) dumpPrometheus() error {
 	pusher := p.builder.ToPrometheus(
 		p.flags.PushGatewayAddress,
-		p.client.ActiveNamespace(),
+		p.factory.Client().ActiveNamespace(),
 	)
 	return pusher.Add()
 }
@@ -243,7 +406,7 @@ func (p *Popeye) dump(printHeader bool) error {
 		return errors.New("Nothing to report, check section name or permissions")
 	}
 
-	p.builder.SetClusterName(p.client.ActiveCluster())
+	p.builder.SetClusterName(p.factory.Client().ActiveCluster())
 	var err error
 	switch p.flags.OutputFormat() {
 	case report.JunitFormat:
@@ -266,48 +429,6 @@ func (p *Popeye) dump(printHeader bool) error {
 }
 func (p *Popeye) Dump(printHeader bool) error {
 	return p.dump(printHeader)
-}
-
-func (p *Popeye) sanitizers() map[string]scrubFn {
-	return map[string]scrubFn{
-		"cluster":                 scrub.NewCluster,
-		"configmap":               scrub.NewConfigMap,
-		"secret":                  scrub.NewSecret,
-		"deployment":              scrub.NewDeployment,
-		"daemonset":               scrub.NewDaemonSet,
-		"horizontalpodautoscaler": scrub.NewHorizontalPodAutoscaler,
-		"namespace":               scrub.NewNamespace,
-		"node":                    scrub.NewNode,
-		"persistentvolume":        scrub.NewPersistentVolume,
-		"persistentvolumeclaim":   scrub.NewPersistentVolumeClaim,
-		"pod":                     scrub.NewPod,
-		"replicaset":              scrub.NewReplicaSet,
-		"service":                 scrub.NewService,
-		"serviceaccount":          scrub.NewServiceAccount,
-		"statefulset":             scrub.NewStatefulSet,
-		"poddisruptionbudget":     scrub.NewPodDisruptionBudget,
-		"ingress":                 scrub.NewIngress,
-		"networkpolicy":           scrub.NewNetworkPolicy,
-		"podsecuritypolicy":       scrub.NewPodSecurityPolicy,
-		"clusterrole":             scrub.NewClusterRole,
-		"clusterrolebinding":      scrub.NewClusterRoleBinding,
-		"role":                    scrub.NewRole,
-		"rolebinding":             scrub.NewRoleBinding,
-	}
-}
-
-type readWriteCloser struct {
-	io.ReadWriter
-}
-
-// Close close read stream.
-func (wC readWriteCloser) Close() error {
-	return nil
-}
-
-// NopWriter fake writer.
-func NopWriter(i io.ReadWriter) io.ReadWriteCloser {
-	return &readWriteCloser{i}
 }
 
 func (p *Popeye) ensureOutput() error {
@@ -340,49 +461,26 @@ func (p *Popeye) ensureOutput() error {
 	return nil
 }
 
-func (p *Popeye) sanitize() error {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	ctx = context.WithValue(
-		ctx,
-		sanitize.PopeyeKey("OverAllocs"),
-		*p.flags.CheckOverAllocs,
-	)
-
-	cache := scrub.NewCache(p.client, p.config)
-	codes, err := issues.LoadCodes()
-	if err != nil {
-		return err
+func (p *Popeye) fileName() string {
+	if *p.flags.OutputFile == "" {
+		return fmt.Sprintf(outFmt, p.factory.Client().ActiveCluster(), time.Now().UnixNano(), p.fileExt())
 	}
-	codes.Refine(p.config.Codes)
-	sections := make([]string, 0, len(p.sanitizers()))
-	for section := range p.sanitizers() {
-		sections = append(sections, section)
+	return fmt.Sprintf(*p.flags.OutputFile)
+}
+
+func (p *Popeye) fileExt() string {
+	switch *p.flags.Output {
+	case "json":
+		return "json"
+	case "junit":
+		return "xml"
+	case "yaml":
+		return "yml"
+	case "html":
+		return "html"
+	default:
+		return "txt"
 	}
-	sort.StringSlice(sections).Sort()
-	for _, section := range sections {
-		if !in(p.aliases.ToResources(p.config.Sections()), section) {
-			continue
-		}
-		// Skip node checks if active namespace is set.
-		if section == "node" && p.client.ActiveNamespace() != "" {
-			continue
-		}
-
-		ctx = context.WithValue(ctx, internal.KeyRun, internal.RunInfo{Section: section})
-		s := p.sanitizers()[section](ctx, cache, codes)
-		if err := s.Sanitize(ctx); err != nil {
-			p.builder.AddError(err)
-			continue
-		}
-
-		o := s.Outcome().Filter(config.Level(p.config.LinterLevel()))
-		tally := report.NewTally()
-		tally.Rollup(o)
-		p.builder.AddSection(section, o, tally)
-	}
-
-	return nil
 }
 
 // ----------------------------------------------------------------------------
@@ -413,16 +511,49 @@ func ensurePath(path string, mod os.FileMode) error {
 	return nil
 }
 
-func in(list []string, member string) bool {
-	if len(list) == 0 {
-		return true
+func dumpDir() string {
+	if d := os.Getenv("POPEYE_REPORT_DIR"); d != "" {
+		return d
 	}
+	return filepath.Join(os.TempDir(), "popeye")
+}
 
-	for _, m := range list {
-		if m == member {
-			return true
+func parseBucket(bucketURI string) (string, string, error) {
+	u, err := url.Parse(bucketURI)
+	if err != nil {
+		return "", "", err
+	}
+	switch u.Scheme {
+	// s3://bucket or s3://bucket/
+	case "s3":
+		var key string
+		if u.Path != "" {
+			key = strings.Trim(u.Path, "/")
 		}
+		return u.Host, key, nil
+	// bucket/ or bucket/path/to/key
+	case "":
+		tokens := strings.SplitAfterN(strings.Trim(u.Path, "/"), "/", 2)
+		key, bucket := "", strings.Trim(tokens[0], "/")
+		if len(tokens) > 1 {
+			key = tokens[1]
+		}
+		return bucket, key, nil
+	default:
+		return "", "", ErrUnknownS3BucketProtocol
 	}
+}
 
-	return false
+type readWriteCloser struct {
+	io.ReadWriter
+}
+
+// Close close read stream.
+func (wC readWriteCloser) Close() error {
+	return nil
+}
+
+// NopWriter fake writer.
+func NopWriter(i io.ReadWriter) io.ReadWriteCloser {
+	return &readWriteCloser{i}
 }

@@ -21,7 +21,7 @@ type (
 
 	// PodGetter find a single pod matching service selector.
 	PodGetter interface {
-		GetPod(map[string]string) *v1.Pod
+		GetPod(ns string, sel map[string]string) *v1.Pod
 	}
 
 	// EndPointLister find all service endpoints.
@@ -50,11 +50,12 @@ func (s *Service) Sanitize(ctx context.Context) error {
 		s.InitOutcome(fqn)
 		ctx = internal.WithFQN(ctx, fqn)
 
-		s.checkPorts(ctx, svc.Spec.Selector, svc.Spec.Ports)
+		s.checkPorts(ctx, svc.Namespace, svc.Spec.Selector, svc.Spec.Ports)
 		s.checkEndpoints(ctx, svc.Spec.Selector, svc.Spec.Type)
 		s.checkType(ctx, svc.Spec.Type)
+		s.checkExternalTrafficPolicy(ctx, svc.Spec.Type, svc.Spec.ExternalTrafficPolicy)
 
-		if s.Config.ExcludeFQN(internal.MustExtractSection(ctx), fqn) {
+		if s.NoConcerns(fqn) && s.Config.ExcludeFQN(internal.MustExtractSectionGVR(ctx), fqn) {
 			s.ClearOutcome(fqn)
 		}
 	}
@@ -62,8 +63,8 @@ func (s *Service) Sanitize(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) checkPorts(ctx context.Context, sel map[string]string, ports []v1.ServicePort) {
-	po := s.GetPod(sel)
+func (s *Service) checkPorts(ctx context.Context, ns string, sel map[string]string, ports []v1.ServicePort) {
+	po := s.GetPod(ns, sel)
 	if po == nil {
 		if len(sel) > 0 {
 			s.AddCode(ctx, 1100)
@@ -99,6 +100,16 @@ func (s *Service) checkType(ctx context.Context, kind v1.ServiceType) {
 	}
 }
 
+func (s *Service) checkExternalTrafficPolicy(ctx context.Context, kind v1.ServiceType, policy v1.ServiceExternalTrafficPolicyType) {
+	if kind == v1.ServiceTypeLoadBalancer && policy == v1.ServiceExternalTrafficPolicyTypeCluster {
+		s.AddCode(ctx, 1107)
+		return
+	}
+	if kind == v1.ServiceTypeNodePort && policy == v1.ServiceExternalTrafficPolicyTypeLocal {
+		s.AddCode(ctx, 1108)
+	}
+}
+
 // CheckEndpoints runs a sanity check on this service endpoints.
 func (s *Service) checkEndpoints(ctx context.Context, sel map[string]string, kind v1.ServiceType) {
 	// Service may not have selectors.
@@ -112,7 +123,16 @@ func (s *Service) checkEndpoints(ctx context.Context, sel map[string]string, kin
 	ep := s.GetEndpoints(internal.MustExtractFQN(ctx))
 	if ep == nil || len(ep.Subsets) == 0 {
 		s.AddCode(ctx, 1105)
+		return
 	}
+	numEndpointAddresses := 0
+	for _, s := range ep.Subsets {
+		numEndpointAddresses += len(s.Addresses)
+		if numEndpointAddresses > 1 {
+			return
+		}
+	}
+	s.AddCode(ctx, 1109)
 }
 
 // ----------------------------------------------------------------------------

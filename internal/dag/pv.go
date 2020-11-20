@@ -1,34 +1,28 @@
 package dag
 
 import (
-	"github.com/derailed/popeye/internal/k8s"
-	"github.com/derailed/popeye/pkg/config"
+	"context"
+	"errors"
+
+	"github.com/derailed/popeye/internal/client"
+	"github.com/derailed/popeye/internal/dao"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // ListPersistentVolumes list all included PersistentVolumes.
-func ListPersistentVolumes(c *k8s.Client, cfg *config.Config) (map[string]*v1.PersistentVolume, error) {
-	pvs, err := listAllPersistentVolumes(c)
-	if err != nil {
-		return nil, err
-	}
-
-	res := make(map[string]*v1.PersistentVolume, len(pvs))
-	for fqn, pv := range pvs {
-		res[fqn] = pv
-	}
-
-	return res, nil
+func ListPersistentVolumes(ctx context.Context) (map[string]*v1.PersistentVolume, error) {
+	return listAllPersistentVolumes(ctx)
 }
 
 // ListAllPersistentVolumes fetch all PersistentVolumes on the cluster.
-func listAllPersistentVolumes(c *k8s.Client) (map[string]*v1.PersistentVolume, error) {
-	ll, err := fetchPersistentVolumes(c)
+func listAllPersistentVolumes(ctx context.Context) (map[string]*v1.PersistentVolume, error) {
+	ll, err := fetchPersistentVolumes(ctx)
 	if err != nil {
 		return nil, err
 	}
-
 	pvs := make(map[string]*v1.PersistentVolume, len(ll.Items))
 	for i := range ll.Items {
 		pvs[metaFQN(ll.Items[i].ObjectMeta)] = &ll.Items[i]
@@ -38,6 +32,31 @@ func listAllPersistentVolumes(c *k8s.Client) (map[string]*v1.PersistentVolume, e
 }
 
 // FetchPersistentVolumes retrieves all PersistentVolumes on the cluster.
-func fetchPersistentVolumes(c *k8s.Client) (*v1.PersistentVolumeList, error) {
-	return c.DialOrDie().CoreV1().PersistentVolumes().List(metav1.ListOptions{})
+func fetchPersistentVolumes(ctx context.Context) (*v1.PersistentVolumeList, error) {
+	f, cfg := mustExtractFactory(ctx), mustExtractConfig(ctx)
+	if cfg.Flags.StandAlone {
+		dial, err := f.Client().Dial()
+		if err != nil {
+			return nil, err
+		}
+		return dial.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
+	}
+
+	var res dao.Resource
+	res.Init(f, client.NewGVR("v1/persistentvolumes"))
+	oo, err := res.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var ll v1.PersistentVolumeList
+	for _, o := range oo {
+		var pv v1.PersistentVolume
+		err = runtime.DefaultUnstructuredConverter.FromUnstructured(o.(*unstructured.Unstructured).Object, &pv)
+		if err != nil {
+			return nil, errors.New("expecting persistentvolume resource")
+		}
+		ll.Items = append(ll.Items, pv)
+	}
+
+	return &ll, nil
 }

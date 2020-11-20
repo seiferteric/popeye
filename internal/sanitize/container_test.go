@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/derailed/popeye/internal"
+	"github.com/derailed/popeye/internal/client"
 	"github.com/derailed/popeye/internal/issues"
-	"github.com/derailed/popeye/internal/k8s"
 	"github.com/derailed/popeye/pkg/config"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
@@ -16,7 +16,7 @@ import (
 func TestContainerCheckUtilization(t *testing.T) {
 	uu := map[string]struct {
 		co     v1.Container
-		mx     k8s.Metrics
+		mx     client.Metrics
 		issues int
 	}{
 		"cool": {
@@ -26,7 +26,7 @@ func TestContainerCheckUtilization(t *testing.T) {
 				lcpu: "10m",
 				lmem: "10Mi",
 			}),
-			mx: k8s.Metrics{CurrentCPU: toQty("1m"), CurrentMEM: toQty("1Mi")},
+			mx: client.Metrics{CurrentCPU: toQty("1m"), CurrentMEM: toQty("1Mi")},
 		},
 		"cpuOver": {
 			co: makeContainer("c1", coOpts{
@@ -35,7 +35,7 @@ func TestContainerCheckUtilization(t *testing.T) {
 				lcpu: "100m",
 				lmem: "10Mi",
 			}),
-			mx:     k8s.Metrics{CurrentCPU: toQty("200m"), CurrentMEM: toQty("2Mi")},
+			mx:     client.Metrics{CurrentCPU: toQty("200m"), CurrentMEM: toQty("2Mi")},
 			issues: 1,
 		},
 		"memOver": {
@@ -45,7 +45,7 @@ func TestContainerCheckUtilization(t *testing.T) {
 				lcpu: "100m",
 				lmem: "10Mi",
 			}),
-			mx:     k8s.Metrics{CurrentCPU: toQty("10m"), CurrentMEM: toQty("20Mi")},
+			mx:     client.Metrics{CurrentCPU: toQty("10m"), CurrentMEM: toQty("20Mi")},
 			issues: 1,
 		},
 		"bothOver": {
@@ -55,7 +55,7 @@ func TestContainerCheckUtilization(t *testing.T) {
 				lcpu: "100m",
 				lmem: "10Mi",
 			}),
-			mx:     k8s.Metrics{CurrentCPU: toQty("5"), CurrentMEM: toQty("20Mi")},
+			mx:     client.Metrics{CurrentCPU: toQty("5"), CurrentMEM: toQty("20Mi")},
 			issues: 2,
 		},
 		"LimOver": {
@@ -65,18 +65,18 @@ func TestContainerCheckUtilization(t *testing.T) {
 				lcpu: "100m",
 				lmem: "10Mi",
 			}),
-			mx:     k8s.Metrics{CurrentCPU: toQty("5"), CurrentMEM: toQty("20Mi")},
+			mx:     client.Metrics{CurrentCPU: toQty("5"), CurrentMEM: toQty("20Mi")},
 			issues: 2,
 		},
 	}
 
-	ctx := makeContext("container")
+	ctx := makeContext("containers", "container")
 	ctx = internal.WithFQN(ctx, "default/p1")
 	for k := range uu {
 		u := uu[k]
 		t.Run(k, func(t *testing.T) {
 			c := NewContainer("default/p1", newRangeCollector(t))
-			ctx = internal.WithGroup(ctx, u.co.Name)
+			ctx = internal.WithGroup(ctx, client.NewGVR("containers"), u.co.Name)
 			c.checkUtilization(ctx, u.co, u.mx)
 
 			assert.Equal(t, u.issues, len(c.Outcome().For("default/p1", "c1")))
@@ -97,7 +97,7 @@ func TestContainerCheckResources(t *testing.T) {
 		"none":  {issues: 1, severity: config.WarnLevel},
 	}
 
-	ctx := makeContext("container")
+	ctx := makeContext("containers", "container")
 	for k := range uu {
 		u := uu[k]
 		opts := coOpts{}
@@ -114,7 +114,7 @@ func TestContainerCheckResources(t *testing.T) {
 
 		t.Run(k, func(t *testing.T) {
 			ctx = internal.WithFQN(ctx, "default/p1")
-			ctx = internal.WithGroup(ctx, co.Name)
+			ctx = internal.WithGroup(ctx, client.NewGVR("containers"), co.Name)
 			l.checkResources(ctx, co)
 
 			assert.Equal(t, u.issues, len(l.Outcome()["default/p1"]))
@@ -140,7 +140,7 @@ func TestContainerCheckProbes(t *testing.T) {
 		"Unnamed":    {liveness: true, readiness: true, namedPort: true, issues: 2, severity: config.InfoLevel},
 	}
 
-	ctx := makeContext("container")
+	ctx := makeContext("containers", "container")
 	for k := range uu {
 		u := uu[k]
 		co := makeContainer("c1", coOpts{})
@@ -179,9 +179,9 @@ func TestContainerCheckImageTags(t *testing.T) {
 		"latest": {pissues: 1, image: "fred:latest", issues: 1, severity: config.WarnLevel},
 	}
 
-	ctx := makeContext("container")
+	ctx := makeContext("containers", "container")
 	ctx = internal.WithFQN(ctx, "default/p1")
-	ctx = internal.WithGroup(ctx, "c1")
+	ctx = internal.WithGroup(ctx, client.NewGVR("containers"), "c1")
 	for k := range uu {
 		u := uu[k]
 		co := makeContainer("c1", coOpts{})
@@ -210,9 +210,9 @@ func TestContainerCheckNamedPorts(t *testing.T) {
 		"unamed": {port: "", issues: 1, severity: config.WarnLevel},
 	}
 
-	ctx := makeContext("container")
+	ctx := makeContext("containers", "container")
 	ctx = internal.WithFQN(ctx, "p1")
-	ctx = internal.WithGroup(ctx, "p1")
+	ctx = internal.WithGroup(ctx, client.NewGVR("v1/pods"), "p1")
 	for k := range uu {
 		u := uu[k]
 		co := makeContainer("c1", coOpts{})
@@ -238,7 +238,7 @@ func TestContainerSanitize(t *testing.T) {
 		"NoImgNoProbs": {makeContainer("c1", coOpts{}), 3},
 	}
 
-	ctx := makeContext("container")
+	ctx := makeContext("containers", "container")
 	for k := range uu {
 		u := uu[k]
 		c := NewContainer("default/p1", newRangeCollector(t))

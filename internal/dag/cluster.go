@@ -1,13 +1,15 @@
 package dag
 
-import (
-	"github.com/derailed/popeye/internal/k8s"
-	"github.com/derailed/popeye/pkg/config"
-)
+import "context"
 
 // ListVersion return server api version.
-func ListVersion(c *k8s.Client, cfg *config.Config) (string, string, error) {
-	v, err := c.DialOrDie().Discovery().ServerVersion()
+func ListVersion(ctx context.Context) (string, string, error) {
+	f := mustExtractFactory(ctx)
+	dial, err := f.Client().Dial()
+	if err != nil {
+		return "", "", err
+	}
+	v, err := dial.Discovery().ServerVersion()
 	if err != nil {
 		return "", "", err
 	}

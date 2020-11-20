@@ -1,8 +1,8 @@
-<img src="assets/popeye_logo.png" align="right" width="250" heigh="auto">
+<img src="assets/popeye_logo.png" align="right" width="250" height="auto">
 
 # Popeye - A Kubernetes Cluster Sanitizer
 
-Popeye is a utility that scans live Kubernetes cluster and reports potential issues with deployed resources and configurations. It sanitizes your cluster based on what's deployed and not what's sitting on disk. By scanning your cluster, it detects misconfigurations and ensure best practices are in place thus preventing potential future headaches. It aims at reducing the cognitive *over*load one faces when operating a Kubernetes cluster in the wild. Furthermore, if your cluster employs a metric-server, it reports potential resources over/under allocations and attempts to warn you should your cluster run out of capacity.
+Popeye is a utility that scans live Kubernetes cluster and reports potential issues with deployed resources and configurations. It sanitizes your cluster based on what's deployed and not what's sitting on disk. By scanning your cluster, it detects misconfigurations and helps you to ensure that best practices are in place, thus preventing future headaches. It aims at reducing the cognitive *over*load one faces when operating a Kubernetes cluster in the wild. Furthermore, if your cluster employs a metric-server, it reports potential resources over/under allocations and attempts to warn you should your cluster run out of capacity.
 
 Popeye is a readonly tool, it does not alter any of your Kubernetes resources in any way!
 
@@ -19,7 +19,6 @@ Popeye is a readonly tool, it does not alter any of your Kubernetes resources in
 [![Docker Repository on Quay](https://quay.io/repository/derailed/popeye/status "Docker Repository on Quay")](https://quay.io/repository/derailed/popeye)
 ![GitHub stars](https://img.shields.io/github/stars/derailed/popeye.svg?label=github%20stars)
 [![Releases](https://img.shields.io/github/downloads/derailed/popeye/total.svg)]()
-
 
 ---
 
@@ -65,6 +64,14 @@ Popeye is available on Linux, OSX and Windows platforms.
    popeye
    ```
 
+## PreFlight Checks
+
+* Popeye uses 256 colors terminal mode. On `Nix system make sure TERM is set accordingly.
+
+    ```shell
+    export TERM=xterm-256color
+    ```
+
 ## Sanitizers
 
 Popeye scans your cluster for best practices and potential issues.
@@ -72,14 +79,14 @@ Currently, Popeye only looks at nodes, namespaces, pods and services.
 More will come soon! We are hoping Kubernetes friends will pitch'in
 to make Popeye even better.
 
-The aim of the sanitizers is to pick up on misconfigurations ie things
-like ports mismatch, dead or unused resources, metrics utilization,
+The aim of the sanitizers is to pick up on misconfigurations, i.e. things
+like port mismatches, dead or unused resources, metrics utilization,
 probes, container images, RBAC rules, naked resources, etc...
 
 Popeye is not another static analysis tool. It runs and inspect Kubernetes resources on
 live clusters and sanitize resources as they are in the wild!
 
-Here is a list of some of the available sanitizers
+Here is a list of some of the available sanitizers:
 
 
 |    | Resource                | Sanitizers                                                              | Aliases    |
@@ -145,8 +152,11 @@ Here is a list of some of the available sanitizers
 To save the Popeye report to a file pass the `--save` flag to the command.
 By default it will create a temp directory and will store the report there,
 the path of the temp directory will be printed out on STDOUT.
-If you have the need of specify the output directory for the report by your own
+If you have the need to specify the output directory for the report,
 you can use the environment variable `POPEYE_REPORT_DIR`.
+By default, the name of the output file follow the following format : `sanitizer_<cluster-name>_<time-UnixNano>.<output-extension>` (e.g. : "sanitizer-mycluster-1594019782530851873.html").
+If you have the need to specify the output file name for the report,
+you can pass the `--output-file` flag with the filename you want as parameter.
 
 Example to save report in working directory:
 
@@ -154,17 +164,56 @@ Example to save report in working directory:
   $ POPEYE_REPORT_DIR=$(pwd) popeye --save
 ```
 
+Example to save report in working directory in HTML format under the name "report.html" :
+
+```shell
+  $ POPEYE_REPORT_DIR=$(pwd) popeye --save --out html --output-file report.html
+```
+
 ### Save the report to S3
 
-You could also save the generated report to an AWS S3 bucket with providing the flag `--s3-bucket`, as parameter you need to provide the name of the S3 bucket where you want to store the report.
+You can also save the generated report to an AWS S3 bucket with providing the flag `--s3-bucket`. As parameter you need to provide the name of the S3 bucket where you want to store the report.
+To save the report in a bucket subdirectory provide the bucket parameter as `bucket/path/to/report`.
 
-Underlying the AWS Go lib is used which is handling the credential loading for more information check out the official [documentation](https://docs.aws.amazon.com/sdk-for-go/api/aws/session/).
-
+Underlying the AWS Go lib is used which is handling the credential loading. For more information check out the official [documentation](https://docs.aws.amazon.com/sdk-for-go/api/aws/session/).
 
 Example to save report to S3:
 
 ```shell
-  $ popeye --s3-bucket=NAME-OF-YOUR-S3-BUCKET --out=json
+popeye --s3-bucket=NAME-OF-YOUR-S3-BUCKET/OPTIONAL/SUBDIRECTORY --out=json
+```
+
+### Run public docker image locally
+
+You don't have to build and/or install the binary to run popeye: you can just
+run it directly from the official docker repo on quay.io. The default command
+when you run the docker container is `popeye`, so you just need to pass
+whatever cli args are normally passed to popeye.  To access your clusters, map
+your local kube config directory into the container with `-v` :
+
+```shell
+  docker run --rm -it \
+    -v $HOME/.kube:/root/.kube \
+    quay.io/derailed/popeye --context foo -n bar
+```
+
+Running the above docker command with `--rm` means that the container gets
+deleted when popeye exits. When you use `--save`, it will write it to /tmp in
+the container and then delete the container when popeye exits, which means you
+lose the output. To get around this, map /tmp to the container's /tmp.
+NOTE: You can override the default output directory location by setting `POPEYE_REPORT_DIR` env variable.
+
+```shell
+  docker run --rm -it \
+    -v $HOME/.kube:/root/.kube
+    -e POPEYE_REPORT_DIR=/tmp/popeye
+    -v /tmp:/tmp \
+    quay.io/derailed/popeye --context foo -n bar --save --output-file my_report.txt
+
+  # Docker has exited, and the container has been deleted, but the file
+  # is in your /tmp directory because you mapped it into the container
+  $ cat /tmp/popeye/my_report.txt
+    <snip>
 ```
 
 ## The Command Line
@@ -189,11 +238,10 @@ popeye help
 
 Popeye can generate sanitizer reports in a variety of formats. You can use the -o cli option and pick your poison from there.
 
-
 | Format     | Description                                            | Default | Credits                                      |
 |------------|--------------------------------------------------------|---------|----------------------------------------------|
 | standard   | The full monty output iconized and colorized           | yes     |                                              |
-| jurassic   | No icons or color like it's 1989                       |         |                                              |
+| jurassic   | No icons or color like it's 1979                       |         |                                              |
 | yaml       | As YAML                                                |         |                                              |
 | html       | As HTML                                                |         |                                              |
 | json       | As JSON                                                |         |                                              |
@@ -203,16 +251,20 @@ Popeye can generate sanitizer reports in a variety of formats. You can use the -
 
 ## The SpinachYAML Configuration
 
-A spinach.yml configuration file can be specified via the `-f` option to further configure the sanitizers. This file may
-container utilization threshold and specific sanitizer configurations as well as which resources to exclude in your cluster.
+A spinach.yml configuration file can be specified via the `-f` option to further configure the sanitizers. This file may specify
+the container utilization threshold and specific sanitizer configurations as well as resources that will be excluded from the sanitization.
 
 NOTE: This file will change as Popeye matures!
 
- A resource is identified by a resource kind and a fully qualified resource name ie `namespace/resource_name`. For example a pod named fred-1234 in namespace blee FQN will be `blee/fred-1234`. This provides for differentiating `fred/p1` and `blee/p1`. For cluster wide resources, `FQN=name`. Exclude rules can have either a straight string match or a regular expression. In the later case the regular expression must be indicated using the `rx:` prefix.
+Under the `excludes` key you can configure to skip certain resources, or certain checks by code. Here, resource types are indicated in a group/version/resource notation. Example: to exclude pod disruptions budgets, use the notation `policy/v1beta1/poddisruptionbudgets`. Note that the resource name is written in the plural form and everything is spelled in lowercase. For resources without an API group, the group part is omitted (Examples: `v1/pods`, `v1/services`, `v1/configmaps`).
 
-NOTE! Please thread carefully here with your regex as more resources than expected may get excluded from the report via a *loose* regex rule. When your cluster resources change, this could lead to rendering sanitization sub-optimal. Once in a while it might be a good idea to run Popeye `Config less` to make sure you are trapping any new issues that may have arised in your clusters...
+A resource is identified by a resource kind and a fully qualified resource name, i.e. `namespace/resource_name`.
 
-Here is an example spinach file as it stands in this release. There is a fuller eks based spinach file in this repo under `spinach`. (BTW: for new comers into the project, might be a great way to contribute by adding cluster specific spinach file PRs...)
+For example, the FQN of a pod named `fred-1234` in the namespace `blee` will be `blee/fred-1234`. This provides for differentiating `fred/p1` and `blee/p1`. For cluster wide resources, the FQN is equivalent to the name. Exclude rules can have either a straight string match or a regular expression. In the latter case the regular expression must be indicated using the `rx:` prefix.
+
+NOTE! Please be careful with your regex as more resources than expected may get excluded from the report with a *loose* regex rule. When your cluster resources change, this could lead to a sub-optimal sanitization. Once in a while it might be a good idea to run Popeye „configless“ to make sure you will recognize any new issues that may have arisen in your clusters…
+
+Here is an example spinach file as it stands in this release. There is a fuller eks and aks based spinach file in this repo under `spinach`. (BTW: for new comers into the project, might be a great way to contribute by adding cluster specific spinach file PRs...)
 
 ```yaml
 # A Popeye sample configuration file
@@ -230,19 +282,33 @@ popeye:
 
   # Excludes excludes certain resources from Popeye scans
   excludes:
+    v1/pods:
+    # In the monitoring namespace excludes all probes check on pod's containers.
+    - name: rx:monitoring
+      codes:
+      - 102
+    # Excludes all istio-proxy container scans for pods in the icx namespace.
+    - name: rx:icx/.*
+      containers:
+        # Excludes istio init/sidecar container from scan!
+        - istio-proxy
+        - istio-init
     # ConfigMap sanitizer exclusions...
-    configmap:
+    v1/configmaps:
       # Excludes key must match the singular form of the resource.
       # For instance this rule will exclude all configmaps named fred.v2.3 and fred.v2.4
       - name: rx:fred.+\.v\d+
     # Namespace sanitizer exclusions...
-    namespace:
+    v1/namespaces:
       # Exclude all fred* namespaces if the namespaces are not found (404), other error codes will be reported!
       - name: rx:kube
         codes:
           - 404
       # Exclude all istio* namespaces from being scanned.
       - name: rx:istio
+    # Completely exclude horizontal pod autoscalers.
+    autoscaling/v1/horizontalpodautoscalers:
+      - name: rx:.*
 
   # Configure node resources.
   node:
@@ -267,7 +333,7 @@ popeye:
 
 ## Popeye In Your Clusters!
 
-Alternatively, Popeye is containerized and can be run directly in your Kubernetes clusters as a single shot or cronjob.
+Alternatively, Popeye is containerized and can be run directly in your Kubernetes clusters as a one-off or CronJob.
 
 Here is a sample setup, please modify per your needs/wants. The manifests for this are in the k8s
 directory in this repo.
@@ -284,7 +350,7 @@ metadata:
   name:      popeye
   namespace: popeye
 spec:
-  schedule: "* */1 * * *" # Fireoff Popeye once an hour
+  schedule: "* */1 * * *" # Fire off Popeye once an hour
   concurrencyPolicy: Forbid
   jobTemplate:
     spec:
@@ -294,7 +360,7 @@ spec:
           restartPolicy: Never
           containers:
             - name: popeye
-              image: quay.io/derailed/popeye:v0.7.0
+              image: quay.io/derailed/popeye
               imagePullPolicy: IfNotPresent
               args:
                 - -o
@@ -310,7 +376,7 @@ spec:
 In order for Popeye to do his work, the signed-in user must have enough RBAC oomph to
 get/list the resources mentioned above.
 
-Sample Popeye RBAC Rules (Subject to change!!)
+Sample Popeye RBAC Rules (please note that those are **subject to change**.)
 
 ```yaml
 ---
@@ -321,6 +387,7 @@ metadata:
   name:      popeye
   namespace: popeye
 
+---
 # Popeye needs get/list access on the following Kubernetes resources.
 apiVersion: rbac.authorization.k8s.io/v1
 kind:       ClusterRole
@@ -394,17 +461,17 @@ The report is color/emoji coded in term of Sanitizer severity levels:
 | Warn  | 😱   | W        | Yellow    | Potential Issue |
 | Error | 💥   | E        | Red       | Action required |
 
-The heading section for each Kubenertes resource scanned,  provides an issue rollup summary count
+The heading section for each scanned Kubernetes resource provides a summary count
 for each of the categories above.
 
 The Summary section provides a **Popeye Score** based on the sanitization pass on the given cluster.
 
 ## Known Issues
 
-This initial drop is brittle. Popeye will most likely blow up...
+This initial drop is brittle. Popeye will most likely blow up when…
 
-* You're running older versions of Kubernetes. Popeye works best Kubernetes 1.13+.
-* You don't have enough RBAC fu to manage your cluster (see RBAC section)
+* You're running older versions of Kubernetes. Popeye works best with Kubernetes 1.13+.
+* You don't have enough RBAC oomph to manage your cluster (see RBAC section)
 
 ## Disclaimer
 

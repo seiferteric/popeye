@@ -68,16 +68,16 @@ func junitMarshal(b *Builder, level config.Level) ([]byte, error) {
 	}
 
 	for _, section := range b.Report.Sections {
-		s.Suites = append(s.Suites, newSuite(section, b, level))
+		s.Suites = append(s.Suites, newSuite(section, level))
 	}
 
 	return xml.MarshalIndent(s, "", "\t")
 }
 
-func newSuite(s Section, b *Builder, level config.Level) TestSuite {
+func newSuite(s Section, level config.Level) TestSuite {
 	total, fails, errs := numTests(s.Outcome)
 	ts := TestSuite{
-		Name:     b.aliases.FromAlias(s.Title),
+		Name:     s.Title,
 		Tests:    total,
 		Failures: fails,
 		Errors:   errs,

@@ -1,36 +1,28 @@
 package dag
 
 import (
-	"github.com/derailed/popeye/internal/k8s"
-	"github.com/derailed/popeye/pkg/config"
+	"context"
+	"errors"
+
+	"github.com/derailed/popeye/internal/client"
+	"github.com/derailed/popeye/internal/dao"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // ListServiceAccounts list included ServiceAccounts.
-func ListServiceAccounts(c *k8s.Client, cfg *config.Config) (map[string]*v1.ServiceAccount, error) {
-	sas, err := listAllServiceAccounts(c)
-	if err != nil {
-		return map[string]*v1.ServiceAccount{}, err
-	}
-
-	res := make(map[string]*v1.ServiceAccount, len(sas))
-	for fqn, sa := range sas {
-		if includeNS(c, sa.Namespace) {
-			res[fqn] = sa
-		}
-	}
-
-	return res, nil
+func ListServiceAccounts(ctx context.Context) (map[string]*v1.ServiceAccount, error) {
+	return listAllServiceAccounts(ctx)
 }
 
 // ListAllServiceAccounts fetch all ServiceAccounts on the cluster.
-func listAllServiceAccounts(c *k8s.Client) (map[string]*v1.ServiceAccount, error) {
-	ll, err := fetchServiceAccounts(c)
+func listAllServiceAccounts(ctx context.Context) (map[string]*v1.ServiceAccount, error) {
+	ll, err := fetchServiceAccounts(ctx)
 	if err != nil {
 		return nil, err
 	}
-
 	sas := make(map[string]*v1.ServiceAccount, len(ll.Items))
 	for i := range ll.Items {
 		sas[metaFQN(ll.Items[i].ObjectMeta)] = &ll.Items[i]
@@ -40,6 +32,32 @@ func listAllServiceAccounts(c *k8s.Client) (map[string]*v1.ServiceAccount, error
 }
 
 // FetchServiceAccounts retrieves all ServiceAccounts on the cluster.
-func fetchServiceAccounts(c *k8s.Client) (*v1.ServiceAccountList, error) {
-	return c.DialOrDie().CoreV1().ServiceAccounts(c.ActiveNamespace()).List(metav1.ListOptions{})
+func fetchServiceAccounts(ctx context.Context) (*v1.ServiceAccountList, error) {
+	f, cfg := mustExtractFactory(ctx), mustExtractConfig(ctx)
+	if cfg.Flags.StandAlone {
+		dial, err := f.Client().Dial()
+		if err != nil {
+			return nil, err
+		}
+		return dial.CoreV1().ServiceAccounts(f.Client().ActiveNamespace()).List(ctx, metav1.ListOptions{})
+	}
+
+	var res dao.Resource
+	res.Init(f, client.NewGVR("v1/serviceaccounts"))
+	oo, err := res.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var ll v1.ServiceAccountList
+	for _, o := range oo {
+		var sa v1.ServiceAccount
+		err = runtime.DefaultUnstructuredConverter.FromUnstructured(o.(*unstructured.Unstructured).Object, &sa)
+		if err != nil {
+			return nil, errors.New("expecting serviceaccount resource")
+		}
+		ll.Items = append(ll.Items, sa)
+	}
+
+	return &ll, nil
+
 }

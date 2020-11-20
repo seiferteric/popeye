@@ -12,7 +12,7 @@ type (
 	}
 )
 
-// LoadCodes retrieves sanitifizers codes from yaml file.
+// LoadCodes retrieves sanitizers codes from yaml file.
 func LoadCodes() (*Codes, error) {
 	var cc Codes
 	if err := yaml.Unmarshal([]byte(codes), &cc); err != nil {
@@ -71,7 +71,7 @@ codes:
     message:  No resource limits defined
     severity: 2
   108:
-    message:  "Unnamed port %d"
+    message:  Unnamed port %d
     severity: 1
   109:
     message:  CPU Current/Request (%s/%s) reached user %d%% threshold (%d%%)
@@ -118,6 +118,9 @@ codes:
     message:  Pod is in an unhappy phase (%s)
     severity: 3
     tailwindseverity: 6
+  208:
+    message: Unmanaged pod detected. Best to use a controller
+    severity: 2
 
   # -------------------------------------------------------------------------
   # Security
@@ -128,7 +131,7 @@ codes:
     message:  Connects to API Server? ServiceAccount token is mounted
     severity: 2
   302:
-    message:  Pod could be running as root user. Check SecurityContext/image
+    message:  Pod could be running as root user. Check SecurityContext/Image
     severity: 2
   303:
     message: Do you mean it? ServiceAccount is automounting APIServer credentials
@@ -145,7 +148,7 @@ codes:
     message: Container could be running as root user. Check SecurityContext/Image
     severity: 2
 
-    # -------------------------------------------------------------------------
+  # -------------------------------------------------------------------------
   # General
   400:
     message:  Used? Unable to locate resource reference
@@ -175,23 +178,25 @@ codes:
     message:  Zero scale detected
     severity: 2
   501:
-    message:  "Used? No available replicas found"
-    severity: 2
-  502:
-    message:  "ReplicaSet collisions detected (%d)"
+    message:  Unhealthy %d desired but have %d available
     severity: 3
   503:
-    message:  "At current load, CPU under allocated. Current:%s vs Requested:%s (%s)"
+    message:  At current load, CPU under allocated. Current:%s vs Requested:%s (%s)
     severity: 2
   504:
-    message:  "At current load, CPU over allocated. Current:%s vs Requested:%s (%s)"
+    message:  At current load, CPU over allocated. Current:%s vs Requested:%s (%s)
     severity: 2
   505:
-    message:  "At current load, Memory under allocated. Current:%s vs Requested:%s (%s)"
+    message:  At current load, Memory under allocated. Current:%s vs Requested:%s (%s)
     severity: 2
   506:
-    message:  "At current load, Memory over allocated. Current:%s vs Requested:%s (%s)"
+    message:  At current load, Memory over allocated. Current:%s vs Requested:%s (%s)
     severity: 2
+  507:
+    message: Deployment references ServiceAccount %q which does not exist
+    severity: 3
+
+  # -------------------------------------------------------------------------
   # HPA
   600:
     message:  HPA %s references a Deployment %s which does not exist
@@ -232,13 +237,13 @@ codes:
     severity: 3
     tailwindseverity: 4
   704:
-    message:  Insuficient memory
+    message:  Insufficient memory
     severity: 2
   705:
-    message:  Insuficient disk space
+    message:  Insufficient disk space
     severity: 2
   706:
-    message:  Insuficient PIDS on Node
+    message:  Insufficient PIDs on Node
     severity: 3
     tailwindseverity: 5
   707:
@@ -254,6 +259,12 @@ codes:
   710:
     message:  Memory threshold (%d%%) reached %d%%
     severity: 2
+  711:
+    message: Scheduling disabled
+    severity: 2
+  712:
+    message: Found only one master node
+    severity: 1
 
   # -------------------------------------------------------------------------
   # Namespace
@@ -268,6 +279,9 @@ codes:
   901:
     message:  MinAvailable (%d) is greater than the number of pods(%d) currently running
     severity: 2
+
+  # -------------------------------------------------------------------------
+  # PV/PVC
   1000:
     message:  Available
     severity: 1
@@ -298,7 +312,7 @@ codes:
     message:  Skip ports check. No explicit ports detected on pod %s
     severity: 1
   1102:
-    message:  "Use of target port #%s for service port %s. Prefer named port"
+    message:  Use of target port #%s for service port %s. Prefer named port
     severity: 1
   1103:
     message:  Type Loadbalancer detected. Could be expensive
@@ -311,7 +325,22 @@ codes:
     severity: 3
     tailwindseverity: 18
   1106:
-    message:  "No target ports match service port %s"
+    message: No target ports match service port %s
+    severity: 3
+  1107:
+    message: LoadBalancer detected but service sets externalTrafficPolicy to "Cluster"
+    severity: 1
+  1108:
+    message:  NodePort detected but service sets externalTrafficPolicy to "Local"
+    severity: 1
+  1109:
+    message: Only one associated endpoint
+    severity: 2
+
+  # -------------------------------------------------------------------------
+  # ReplicaSet
+  1120:
+    message:  Unhealthy ReplicaSet %d desired but have %d ready
     severity: 3
     tailwindseverity: 19
 

@@ -20,7 +20,7 @@ func TestPVCSanitize(t *testing.T) {
 		"used":    {makePVCLister(pvcOpts{used: "pvc2", phase: v1.ClaimBound}), 1},
 	}
 
-	ctx := makeContext("pvc")
+	ctx := makeContext("v1/persistentvolumeclaims", "pvc")
 	for k := range uu {
 		u := uu[k]
 		t.Run(k, func(t *testing.T) {
@@ -61,7 +61,7 @@ func (p pvc) ListPods() map[string]*v1.Pod {
 	}
 }
 
-func (p pvc) GetPod(map[string]string) *v1.Pod {
+func (p pvc) GetPod(string, map[string]string) *v1.Pod {
 	return nil
 }
 

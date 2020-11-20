@@ -12,12 +12,13 @@ builds:
       - darwin
       - windows
     goarch:
-      - 386
       - amd64
       - arm
       - arm64
     goarm:
       - 7
+    flags:
+      - -trimpath
     ldflags:
       - -s -w -X github.com/derailed/popeye/cmd.version={{.Version}} -X github.com/derailed/popeye/cmd.commit={{.Commit}} -X github.com/derailed/popeye/cmd.date={{.Date}}
 archives:

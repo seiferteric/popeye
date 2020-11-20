@@ -5,9 +5,10 @@ import (
 	"errors"
 
 	"github.com/derailed/popeye/internal"
+	"github.com/derailed/popeye/internal/client"
 	"github.com/derailed/popeye/internal/issues"
-	"github.com/derailed/popeye/internal/k8s"
 	appsv1 "k8s.io/api/apps/v1"
+	v1 "k8s.io/api/core/v1"
 )
 
 type (
@@ -28,6 +29,7 @@ type (
 		PodsMetricsLister
 
 		ListStatefulSets() map[string]*appsv1.StatefulSet
+		ListServiceAccounts() map[string]*v1.ServiceAccount
 	}
 
 	// StatefulSet represents a StatefulSet sanitizer.
@@ -47,7 +49,7 @@ func NewStatefulSet(co *issues.Collector, lister StatefulSetLister) *StatefulSet
 
 // Sanitize cleanse the resource.
 func (s *StatefulSet) Sanitize(ctx context.Context) error {
-	pmx := k8s.PodsMetrics{}
+	pmx := client.PodsMetrics{}
 	podsMetrics(s, pmx)
 
 	over := pullOverAllocs(ctx)
@@ -60,7 +62,7 @@ func (s *StatefulSet) Sanitize(ctx context.Context) error {
 		s.checkContainers(ctx, st)
 		s.checkUtilization(ctx, over, st, pmx)
 
-		if s.Config.ExcludeFQN(internal.MustExtractSection(ctx), fqn) {
+		if s.NoConcerns(fqn) && s.Config.ExcludeFQN(internal.MustExtractSectionGVR(ctx), fqn) {
 			s.ClearOutcome(fqn)
 		}
 	}
@@ -71,7 +73,7 @@ func (s *StatefulSet) Sanitize(ctx context.Context) error {
 func (s *StatefulSet) checkDeprecation(ctx context.Context, st *appsv1.StatefulSet) {
 	const current = "apps/v1"
 
-	rev, err := resourceRev(internal.MustExtractFQN(ctx), st.Annotations)
+	rev, err := resourceRev(internal.MustExtractFQN(ctx), "StatefulSet", st.Annotations)
 	if err != nil {
 		rev = revFromLink(st.SelfLink)
 		if rev == "" {
@@ -85,18 +87,24 @@ func (s *StatefulSet) checkDeprecation(ctx context.Context, st *appsv1.StatefulS
 	}
 }
 
-func (s *StatefulSet) checkStatefulSet(ctx context.Context, st *appsv1.StatefulSet) {
-	if st.Spec.Replicas == nil || (st.Spec.Replicas != nil && *st.Spec.Replicas == 0) {
+func (s *StatefulSet) checkStatefulSet(ctx context.Context, sts *appsv1.StatefulSet) {
+	if sts.Spec.Replicas == nil || (sts.Spec.Replicas != nil && *sts.Spec.Replicas == 0) {
 		s.AddCode(ctx, 500)
+		return
 	}
 
-	if st.Status.CurrentReplicas == 0 {
-		s.AddCode(ctx, 501)
+	if sts.Spec.Replicas != nil && *sts.Spec.Replicas != sts.Status.ReadyReplicas {
+		s.AddCode(ctx, 501, *sts.Spec.Replicas, sts.Status.ReadyReplicas)
 	}
 
-	if st.Status.CollisionCount != nil && *st.Status.CollisionCount > 0 {
-		s.AddCode(ctx, 502, *st.Status.CollisionCount)
+	if sts.Spec.Template.Spec.ServiceAccountName == "" {
+		return
 	}
+
+	if _, ok := s.ListServiceAccounts()[client.FQN(sts.Namespace, sts.Spec.Template.Spec.ServiceAccountName)]; !ok {
+		s.AddCode(ctx, 507, sts.Spec.Template.Spec.ServiceAccountName)
+	}
+
 }
 
 func (s *StatefulSet) checkContainers(ctx context.Context, st *appsv1.StatefulSet) {
@@ -136,7 +144,7 @@ func checkMEM(ctx context.Context, c CollectorLimiter, over bool, mx Consumption
 	}
 }
 
-func (s *StatefulSet) checkUtilization(ctx context.Context, over bool, st *appsv1.StatefulSet, pmx k8s.PodsMetrics) {
+func (s *StatefulSet) checkUtilization(ctx context.Context, over bool, st *appsv1.StatefulSet, pmx client.PodsMetrics) {
 	mx := s.statefulsetUsage(st, pmx)
 	if mx.RequestCPU.IsZero() && mx.RequestMEM.IsZero() {
 		return
@@ -146,9 +154,9 @@ func (s *StatefulSet) checkUtilization(ctx context.Context, over bool, st *appsv
 	checkMEM(ctx, s, over, mx)
 }
 
-func (s *StatefulSet) statefulsetUsage(st *appsv1.StatefulSet, pmx k8s.PodsMetrics) ConsumptionMetrics {
+func (s *StatefulSet) statefulsetUsage(st *appsv1.StatefulSet, pmx client.PodsMetrics) ConsumptionMetrics {
 	var mx ConsumptionMetrics
-	for pfqn, pod := range s.ListPodsBySelector(st.Spec.Selector) {
+	for pfqn, pod := range s.ListPodsBySelector(st.Namespace, st.Spec.Selector) {
 		cpu, mem := computePodResources(pod.Spec)
 		mx.QOS = pod.Status.QOSClass
 		mx.RequestCPU.Add(cpu)

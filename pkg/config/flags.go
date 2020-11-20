@@ -12,7 +12,7 @@ type Flags struct {
 	Output             *string
 	ClearScreen        *bool
 	Save               *bool
-	SaveToS3           *bool
+	OutputFile         *string
 	S3Bucket           *string
 	CheckOverAllocs    *bool
 	AllNamespaces      *bool
@@ -20,6 +20,8 @@ type Flags struct {
 	Sections           *[]string
 	PushGatewayAddress *string
 	InClusterName      *string
+	StandAlone         bool
+	ActiveNamespace    *string
 }
 
 // NewFlags returns new configuration flags.
@@ -29,7 +31,7 @@ func NewFlags() *Flags {
 		Output:             strPtr("standard"),
 		AllNamespaces:      boolPtr(false),
 		Save:               boolPtr(false),
-		SaveToS3:           boolPtr(false),
+		OutputFile:         strPtr(""),
 		S3Bucket:           strPtr(""),
 		InClusterName:      strPtr(""),
 		ClearScreen:        boolPtr(false),
@@ -37,7 +39,8 @@ func NewFlags() *Flags {
 		Spinach:            strPtr(""),
 		Sections:           &[]string{},
 		ConfigFlags:        genericclioptions.NewConfigFlags(false),
-		PushGatewayAddress: strPtr("")}
+		PushGatewayAddress: strPtr(""),
+	}
 }
 
 // OutputFormat returns the report output format.

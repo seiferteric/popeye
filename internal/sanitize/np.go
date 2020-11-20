@@ -48,7 +48,7 @@ func (n *NetworkPolicy) Sanitize(ctx context.Context) error {
 		n.checkDeprecation(ctx, np)
 		n.checkRefs(ctx, np)
 
-		if n.Config.ExcludeFQN(internal.MustExtractSection(ctx), fqn) {
+		if n.NoConcerns(fqn) && n.Config.ExcludeFQN(internal.MustExtractSectionGVR(ctx), fqn) {
 			n.ClearOutcome(fqn)
 		}
 	}
@@ -56,38 +56,49 @@ func (n *NetworkPolicy) Sanitize(ctx context.Context) error {
 	return nil
 }
 
-func (n *NetworkPolicy) checkPodSelector(ctx context.Context, sel *metav1.LabelSelector, kind string) {
+func (n *NetworkPolicy) checkPodSelector(ctx context.Context, nss map[string]*v1.Namespace, sel *metav1.LabelSelector, kind string) {
 	if sel == nil {
 		return
 	}
 
-	if pods := n.ListPodsBySelector(sel); len(pods) == 0 {
+	var found bool
+	for ns := range nss {
+		if pods := n.ListPodsBySelector(ns, sel); len(pods) > 0 {
+			found = true
+		}
+	}
+	if !found {
 		n.AddCode(ctx, 1200, kind)
 	}
 }
 
-func (n *NetworkPolicy) checkNSSelector(ctx context.Context, sel *metav1.LabelSelector, kind string) {
+func (n *NetworkPolicy) checkNSSelector(ctx context.Context, sel *metav1.LabelSelector, kind string) map[string]*v1.Namespace {
 	if sel == nil {
-		return
+		return nil
 	}
 
-	if nss := n.ListNamespacesBySelector(sel); len(nss) == 0 {
+	nss := n.ListNamespacesBySelector(sel)
+	if len(nss) == 0 {
 		n.AddCode(ctx, 1201, kind)
 	}
+
+	return nss
 }
 
 func (n *NetworkPolicy) checkRefs(ctx context.Context, np *nv1.NetworkPolicy) {
 	for _, ing := range np.Spec.Ingress {
 		for _, f := range ing.From {
-			n.checkPodSelector(ctx, f.PodSelector, "Ingress")
-			n.checkNSSelector(ctx, f.NamespaceSelector, "Ingress")
+			if nss := n.checkNSSelector(ctx, f.NamespaceSelector, "Ingress"); len(nss) > 0 {
+				n.checkPodSelector(ctx, nss, f.PodSelector, "Ingress")
+			}
 		}
 	}
 
 	for _, eg := range np.Spec.Egress {
 		for _, f := range eg.To {
-			n.checkPodSelector(ctx, f.PodSelector, "Egress")
-			n.checkNSSelector(ctx, f.NamespaceSelector, "Egress")
+			if nss := n.checkNSSelector(ctx, f.NamespaceSelector, "Egress"); len(nss) > 0 {
+				n.checkPodSelector(ctx, nss, f.PodSelector, "Egress")
+			}
 		}
 	}
 }
@@ -95,7 +106,7 @@ func (n *NetworkPolicy) checkRefs(ctx context.Context, np *nv1.NetworkPolicy) {
 func (n *NetworkPolicy) checkDeprecation(ctx context.Context, np *nv1.NetworkPolicy) {
 	const current = "networking.k8s.io/v1"
 
-	rev, err := resourceRev(internal.MustExtractFQN(ctx), np.Annotations)
+	rev, err := resourceRev(internal.MustExtractFQN(ctx), "NetworkPolicy", np.Annotations)
 	if err != nil {
 		rev = revFromLink(np.SelfLink)
 		if rev == "" {

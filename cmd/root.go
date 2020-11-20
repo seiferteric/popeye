@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 
@@ -21,12 +22,20 @@ var (
 	date    = "n/a"
 	flags   = config.NewFlags()
 	rootCmd = &cobra.Command{
-		Use:   "popeye",
+		Use:   execName(),
 		Short: "A Kubernetes Cluster sanitizer and linter",
 		Long:  `Popeye scans your Kubernetes clusters and reports potential resource issues.`,
 		Run:   doIt,
 	}
 )
+
+func execName() string {
+	n := "popeye"
+	if strings.HasPrefix(filepath.Base(os.Args[0]), "kubectl-") {
+		return "kubectl-" + n
+	}
+	return n
+}
 
 func init() {
 	rootCmd.AddCommand(versionCmd())
@@ -59,15 +68,21 @@ func doIt(cmd *cobra.Command, args []string) {
 	if err != nil {
 		bomb(fmt.Sprintf("%v", err))
 	}
+	flags.StandAlone = true
 	popeye, err := pkg.NewPopeye(flags, &log.Logger)
 	if err != nil {
 		bomb(fmt.Sprintf("Popeye configuration load failed %v", err))
 	}
-	if err := popeye.Init(); err != nil {
+	if e := popeye.Init(); e != nil {
+		bomb(e.Error())
+	}
+	errCount, err := popeye.Sanitize()
+	if err != nil {
 		bomb(err.Error())
 	}
-	if err := popeye.Sanitize(); err != nil {
-		bomb(err.Error())
+
+	if errCount > 0 {
+		os.Exit(1)
 	}
 }
 
@@ -84,6 +99,11 @@ func initPopeyeFlags() {
 	rootCmd.Flags().BoolVarP(flags.Save, "save", "",
 		false,
 		"Specify if you want Popeye to persist the output to a file",
+	)
+
+	rootCmd.Flags().StringVarP(flags.OutputFile, "output-file", "",
+		"",
+		"Specify the name of the saved output file",
 	)
 
 	rootCmd.Flags().StringVarP(flags.S3Bucket, "s3-bucket", "",
@@ -236,6 +256,9 @@ func initFlags() {
 func checkFlags() error {
 	if flags.OutputFormat() == report.PrometheusFormat && *flags.PushGatewayAddress == "" {
 		return errors.New("Please set pushgateway-address.")
+	}
+	if !*flags.Save && *flags.OutputFile != "" {
+		return errors.New("Please set '--save' flag to use 'output-file'.")
 	}
 	return nil
 }

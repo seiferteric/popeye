@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/derailed/popeye/internal/client"
 	"github.com/derailed/popeye/internal/issues"
 	"github.com/derailed/popeye/pkg/config"
 	"github.com/stretchr/testify/assert"
@@ -14,7 +15,7 @@ func TestTallyWrite(t *testing.T) {
 		jurassic bool
 		e        string
 	}{
-		{false, "💥 0 😱 0 🔊 0 ✅ 0 \x1b[38;5;196;m0\x1b[0m٪"},
+		{false, "💥 0 😱 0 🔊 0 ✅ 0 \x1b[38;5;196m0\x1b[0m٪"},
 		{true, "E:0 W:0 I:0 OK:0 0%%"},
 	}
 
@@ -40,11 +41,11 @@ func TestTallyRollup(t *testing.T) {
 		{
 			issues.Outcome{
 				"a": {
-					issues.New(issues.Root, config.InfoLevel, ""),
-					issues.New(issues.Root, config.WarnLevel, ""),
+					issues.New(client.NewGVR("fred"), issues.Root, config.InfoLevel, ""),
+					issues.New(client.NewGVR("fred"), issues.Root, config.WarnLevel, ""),
 				},
 				"b": {
-					issues.New(issues.Root, config.ErrorLevel, ""),
+					issues.New(client.NewGVR("fred"), issues.Root, config.ErrorLevel, ""),
 				},
 				"c": {},
 			},
@@ -68,11 +69,11 @@ func TestTallyScore(t *testing.T) {
 		{
 			issues.Outcome{
 				"a": {
-					issues.New(issues.Root, config.InfoLevel, ""),
-					issues.New(issues.Root, config.WarnLevel, ""),
+					issues.New(client.NewGVR("fred"), issues.Root, config.InfoLevel, ""),
+					issues.New(client.NewGVR("fred"), issues.Root, config.WarnLevel, ""),
 				},
 				"b": {
-					issues.New(issues.Root, config.ErrorLevel, ""),
+					issues.New(client.NewGVR("fred"), issues.Root, config.ErrorLevel, ""),
 				},
 				"c": {},
 			},
@@ -96,15 +97,15 @@ func TestTallyWidth(t *testing.T) {
 		{
 			issues.Outcome{
 				"a": {
-					issues.New(issues.Root, config.InfoLevel, ""),
-					issues.New(issues.Root, config.WarnLevel, ""),
+					issues.New(client.NewGVR("fred"), issues.Root, config.InfoLevel, ""),
+					issues.New(client.NewGVR("fred"), issues.Root, config.WarnLevel, ""),
 				},
 				"b": {
-					issues.New(issues.Root, config.ErrorLevel, ""),
+					issues.New(client.NewGVR("fred"), issues.Root, config.ErrorLevel, ""),
 				},
 				"c": {},
 			},
-			"💥 1 😱 1 🔊 0 ✅ 1 \x1b[38;5;196;m33\x1b[0m٪",
+			"💥 1 😱 1 🔊 0 ✅ 1 \x1b[38;5;196m33\x1b[0m٪",
 		},
 	}
 

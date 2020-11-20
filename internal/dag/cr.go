@@ -1,33 +1,28 @@
 package dag
 
 import (
-	"github.com/derailed/popeye/internal/k8s"
-	"github.com/derailed/popeye/pkg/config"
+	"context"
+	"errors"
+
+	"github.com/derailed/popeye/internal/client"
+	"github.com/derailed/popeye/internal/dao"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // ListClusterRoles list included ClusterRoles.
-func ListClusterRoles(c *k8s.Client, cfg *config.Config) (map[string]*rbacv1.ClusterRole, error) {
-	crs, err := listAllClusterRoles(c)
-	if err != nil {
-		return map[string]*rbacv1.ClusterRole{}, err
-	}
-	res := make(map[string]*rbacv1.ClusterRole, len(crs))
-	for fqn, cr := range crs {
-		res[fqn] = cr
-	}
-
-	return res, nil
+func ListClusterRoles(ctx context.Context) (map[string]*rbacv1.ClusterRole, error) {
+	return listAllClusterRoles(ctx)
 }
 
 // ListAllClusterRoles fetch all ClusterRoles on the cluster.
-func listAllClusterRoles(c *k8s.Client) (map[string]*rbacv1.ClusterRole, error) {
-	ll, err := fetchClusterRoles(c)
+func listAllClusterRoles(ctx context.Context) (map[string]*rbacv1.ClusterRole, error) {
+	ll, err := fetchClusterRoles(ctx)
 	if err != nil {
 		return nil, err
 	}
-
 	crs := make(map[string]*rbacv1.ClusterRole, len(ll.Items))
 	for i := range ll.Items {
 		crs[metaFQN(ll.Items[i].ObjectMeta)] = &ll.Items[i]
@@ -37,6 +32,31 @@ func listAllClusterRoles(c *k8s.Client) (map[string]*rbacv1.ClusterRole, error) 
 }
 
 // FetchClusterRoles retrieves all ClusterRoles on the cluster.
-func fetchClusterRoles(c *k8s.Client) (*rbacv1.ClusterRoleList, error) {
-	return c.DialOrDie().RbacV1().ClusterRoles().List(metav1.ListOptions{})
+func fetchClusterRoles(ctx context.Context) (*rbacv1.ClusterRoleList, error) {
+	f, cfg := mustExtractFactory(ctx), mustExtractConfig(ctx)
+	if cfg.Flags.StandAlone {
+		dial, err := f.Client().Dial()
+		if err != nil {
+			return nil, err
+		}
+		return dial.RbacV1().ClusterRoles().List(ctx, metav1.ListOptions{})
+	}
+
+	var res dao.Resource
+	res.Init(f, client.NewGVR("rbac.authorization.k8s.io/v1/clusterroles"))
+	oo, err := res.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var ll rbacv1.ClusterRoleList
+	for _, o := range oo {
+		var cr rbacv1.ClusterRole
+		err = runtime.DefaultUnstructuredConverter.FromUnstructured(o.(*unstructured.Unstructured).Object, &cr)
+		if err != nil {
+			return nil, errors.New("expecting clusterrole resource")
+		}
+		ll.Items = append(ll.Items, cr)
+	}
+
+	return &ll, nil
 }

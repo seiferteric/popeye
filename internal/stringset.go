@@ -1,5 +1,8 @@
 package internal
 
+// All indicates all data keys are being used when referencing a cm or secret.
+const All = "all"
+
 // Empty denotes an empty value.
 type Empty struct{}
 
@@ -9,11 +12,23 @@ var Blank = Empty{}
 // StringSet represents a set of strings.
 type StringSet map[string]Empty
 
+// AllKeys indicates all keys are present.
+var AllKeys = StringSet{All: Blank}
+
 // Add a collection of elements to the set.
 func (ss StringSet) Add(strs ...string) {
 	for _, s := range strs {
 		ss[s] = Blank
 	}
+}
+
+// Clone returns a new copy.
+func (ss StringSet) Clone() StringSet {
+	clone := make(StringSet, len(ss))
+	for k, v := range ss {
+		clone[k] = v
+	}
+	return clone
 }
 
 // Has checks if an item is in the set.

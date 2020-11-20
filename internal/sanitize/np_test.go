@@ -28,6 +28,7 @@ func TestNPSanitize(t *testing.T) {
 			}),
 			issues: issues.Issues{
 				issues.Issue{
+					GVR:     "networking.k8s.io/v1/networkpolicies",
 					Group:   "__root__",
 					Level:   2,
 					Message: `[POP-403] Deprecated NetworkPolicy API group "policy/v1beta1". Use "networking.k8s.io/v1" instead`},
@@ -40,11 +41,13 @@ func TestNPSanitize(t *testing.T) {
 			}),
 			issues: issues.Issues{
 				issues.Issue{
+					GVR:     "networking.k8s.io/v1/networkpolicies",
 					Group:   "__root__",
 					Level:   2,
 					Message: "[POP-1200] No pods match Ingress pod selector",
 				},
 				issues.Issue{
+					GVR:     "networking.k8s.io/v1/networkpolicies",
 					Group:   "__root__",
 					Level:   2,
 					Message: "[POP-1200] No pods match Egress pod selector",
@@ -58,11 +61,13 @@ func TestNPSanitize(t *testing.T) {
 			}),
 			issues: issues.Issues{
 				issues.Issue{
+					GVR:     "networking.k8s.io/v1/networkpolicies",
 					Group:   "__root__",
 					Level:   2,
 					Message: "[POP-1201] No namespaces match Ingress namespace selector",
 				},
 				issues.Issue{
+					GVR:     "networking.k8s.io/v1/networkpolicies",
 					Group:   "__root__",
 					Level:   2,
 					Message: "[POP-1201] No namespaces match Egress namespace selector",
@@ -71,7 +76,7 @@ func TestNPSanitize(t *testing.T) {
 		},
 	}
 
-	ctx := makeContext("np")
+	ctx := makeContext("networking.k8s.io/v1/networkpolicies", "np")
 	for k := range uu {
 		u := uu[k]
 		t.Run(k, func(t *testing.T) {
@@ -120,7 +125,7 @@ func (n *np) ListNamespacesBySelector(sel *metav1.LabelSelector) map[string]*v1.
 	}
 }
 
-func (n *np) ListPodsBySelector(sel *metav1.LabelSelector) map[string]*v1.Pod {
+func (n *np) ListPodsBySelector(ns string, sel *metav1.LabelSelector) map[string]*v1.Pod {
 	if n.opts.pod {
 		return map[string]*v1.Pod{}
 	}
@@ -136,7 +141,7 @@ func (n *np) ListPods() map[string]*v1.Pod {
 	}
 }
 
-func (n *np) GetPod(map[string]string) *v1.Pod {
+func (n *np) GetPod(string, map[string]string) *v1.Pod {
 	return nil
 }
 

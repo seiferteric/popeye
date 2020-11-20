@@ -203,7 +203,7 @@ func TestSVCSanitize(t *testing.T) {
 		},
 	}
 
-	ctx := makeContext("svc")
+	ctx := makeContext("v1/services", "svc")
 	for k := range uu {
 		u := uu[k]
 		t.Run(k, func(t *testing.T) {
@@ -246,7 +246,7 @@ func (s *svc) ListServices() map[string]*v1.Service {
 	}
 }
 
-func (s *svc) GetPod(map[string]string) *v1.Pod {
+func (s *svc) GetPod(string, map[string]string) *v1.Pod {
 	if s.opts.hasPod {
 		return makeSvcPod("p1")
 	}
@@ -312,7 +312,7 @@ func makeEp(s string, ips ...string) *v1.Endpoints {
 			Namespace: "default",
 		},
 	}
-	var add []v1.EndpointAddress
+	add := make([]v1.EndpointAddress, 0, len(ips))
 	for _, ip := range ips {
 		add = append(add, v1.EndpointAddress{IP: ip})
 	}

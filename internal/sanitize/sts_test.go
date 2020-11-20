@@ -4,7 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/derailed/popeye/internal"
 	"github.com/derailed/popeye/internal/cache"
+	"github.com/derailed/popeye/internal/client"
 	"github.com/derailed/popeye/internal/issues"
 	"github.com/derailed/popeye/pkg/config"
 	"github.com/stretchr/testify/assert"
@@ -38,10 +40,10 @@ func TestSTSSanitizer(t *testing.T) {
 				ccpu:        "100m", cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.Issue{Group: "__root__", Level: 2, Message: `[POP-403] Deprecated StatefulSet API group "extensions/v1". Use "apps/v1" instead`},
+				issues.New(client.NewGVR("apps/v1/statefulsets"), issues.Root, config.WarnLevel, `[POP-403] Deprecated StatefulSet API group "extensions/v1". Use "apps/v1" instead`),
 			},
 		},
-		"used?": {
+		"unhealthy": {
 			lister: makeSTSLister(stsOpts{
 				coOpts:      coOpts{rcpu: "100m", rmem: "10Mi"},
 				replicas:    1,
@@ -50,7 +52,7 @@ func TestSTSSanitizer(t *testing.T) {
 				ccpu:        "100m", cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-501] Used? No available replicas found"),
+				issues.New(client.NewGVR("apps/v1/statefulsets"), issues.Root, config.ErrorLevel, "[POP-501] Unhealthy 1 desired but have 0 available"),
 			},
 		},
 		"zeroReplicas": {
@@ -62,25 +64,12 @@ func TestSTSSanitizer(t *testing.T) {
 				ccpu:        "100m", cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-500] Zero scale detected"),
-			},
-		},
-		"collisions": {
-			lister: makeSTSLister(stsOpts{
-				coOpts:      coOpts{rcpu: "100m", rmem: "10Mi"},
-				replicas:    1,
-				currentReps: 1,
-				collisions:  1,
-				rev:         "apps/v1",
-				ccpu:        "100m", cmem: "10Mi",
-			}),
-			issues: issues.Issues{
-				issues.New(issues.Root, config.ErrorLevel, "[POP-502] ReplicaSet collisions detected (1)"),
+				issues.New(client.NewGVR("apps/v1/statefulsets"), issues.Root, config.WarnLevel, "[POP-500] Zero scale detected"),
 			},
 		},
 	}
 
-	ctx := makeContext("sts")
+	ctx := makeContext("apps/v1/statefulsets", "sts")
 	for k := range uu {
 		u := uu[k]
 		t.Run(k, func(t *testing.T) {
@@ -117,7 +106,7 @@ func TestSTSSanitizerUtilization(t *testing.T) {
 				ccpu:        "200m", cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-503] At current load, CPU under allocated. Current:400m vs Requested:200m (200.00%)"),
+				issues.New(client.NewGVR("apps/v1/statefulsets"), issues.Root, config.WarnLevel, "[POP-503] At current load, CPU under allocated. Current:400m vs Requested:200m (200.00%)"),
 			},
 		},
 		"underCPUGuaranteed": {
@@ -132,7 +121,7 @@ func TestSTSSanitizerUtilization(t *testing.T) {
 				ccpu:        "200m", cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-503] At current load, CPU under allocated. Current:400m vs Requested:200m (200.00%)"),
+				issues.New(client.NewGVR("apps/v1/statefulsets"), issues.Root, config.WarnLevel, "[POP-503] At current load, CPU under allocated. Current:400m vs Requested:200m (200.00%)"),
 			},
 		},
 		"overCPUBurstable": {
@@ -146,7 +135,7 @@ func TestSTSSanitizerUtilization(t *testing.T) {
 				ccpu:        "100m", cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-504] At current load, CPU over allocated. Current:200m vs Requested:800m (400.00%)"),
+				issues.New(client.NewGVR("apps/v1/statefulsets"), issues.Root, config.WarnLevel, "[POP-504] At current load, CPU over allocated. Current:200m vs Requested:800m (400.00%)"),
 			},
 		},
 		"overCPUGuarenteed": {
@@ -161,7 +150,7 @@ func TestSTSSanitizerUtilization(t *testing.T) {
 				ccpu:        "100m", cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-504] At current load, CPU over allocated. Current:200m vs Requested:800m (400.00%)"),
+				issues.New(client.NewGVR("apps/v1/statefulsets"), issues.Root, config.WarnLevel, "[POP-504] At current load, CPU over allocated. Current:200m vs Requested:800m (400.00%)"),
 			},
 		},
 		"underMEMBurstable": {
@@ -175,7 +164,7 @@ func TestSTSSanitizerUtilization(t *testing.T) {
 				ccpu:        "100m", cmem: "20Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-505] At current load, Memory under allocated. Current:40Mi vs Requested:20Mi (200.00%)"),
+				issues.New(client.NewGVR("apps/v1/statefulsets"), issues.Root, config.WarnLevel, "[POP-505] At current load, Memory under allocated. Current:40Mi vs Requested:20Mi (200.00%)"),
 			},
 		},
 		"underMEMGuaranteed": {
@@ -190,7 +179,7 @@ func TestSTSSanitizerUtilization(t *testing.T) {
 				ccpu:        "100m", cmem: "20Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-505] At current load, Memory under allocated. Current:40Mi vs Requested:20Mi (200.00%)"),
+				issues.New(client.NewGVR("apps/v1/statefulsets"), issues.Root, config.WarnLevel, "[POP-505] At current load, Memory under allocated. Current:40Mi vs Requested:20Mi (200.00%)"),
 			},
 		},
 		"overMEMBurstable": {
@@ -204,7 +193,7 @@ func TestSTSSanitizerUtilization(t *testing.T) {
 				ccpu:        "100m", cmem: "20Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-506] At current load, Memory over allocated. Current:40Mi vs Requested:200Mi (500.00%)"),
+				issues.New(client.NewGVR("apps/v1/statefulsets"), issues.Root, config.WarnLevel, "[POP-506] At current load, Memory over allocated. Current:40Mi vs Requested:200Mi (500.00%)"),
 			},
 		},
 		"overMEMGuaranteed": {
@@ -219,13 +208,13 @@ func TestSTSSanitizerUtilization(t *testing.T) {
 				ccpu:        "100m", cmem: "20Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-506] At current load, Memory over allocated. Current:40Mi vs Requested:200Mi (500.00%)"),
+				issues.New(client.NewGVR("apps/v1/statefulsets"), issues.Root, config.WarnLevel, "[POP-506] At current load, Memory over allocated. Current:40Mi vs Requested:200Mi (500.00%)"),
 			},
 		},
 	}
 
-	ctx := makeContext("sts")
-	ctx = context.WithValue(ctx, PopeyeKey("OverAllocs"), true)
+	ctx := makeContext("apps/v1/statefulsets", "sts")
+	ctx = context.WithValue(ctx, internal.KeyOverAllocs, true)
 	for k := range uu {
 		u := uu[k]
 		t.Run(k, func(t *testing.T) {
@@ -295,7 +284,7 @@ func (s *sts) ListStatefulSets() map[string]*appsv1.StatefulSet {
 	}
 }
 
-func (s *sts) ListPodsBySelector(sel *metav1.LabelSelector) map[string]*v1.Pod {
+func (s *sts) ListPodsBySelector(ns string, sel *metav1.LabelSelector) map[string]*v1.Pod {
 	return map[string]*v1.Pod{
 		"default/p1": makeFullPod(podOpts{
 			coOpts: coOpts{
@@ -305,6 +294,10 @@ func (s *sts) ListPodsBySelector(sel *metav1.LabelSelector) map[string]*v1.Pod {
 				lmem: s.opts.lmem,
 			}}),
 	}
+}
+
+func (s *sts) ListServiceAccounts() map[string]*v1.ServiceAccount {
+	return nil
 }
 
 func (s *sts) ListPodsMetrics() map[string]*mv1beta1.PodMetrics {
@@ -366,6 +359,7 @@ func makeSTS(n string, opts stsOpts) *appsv1.StatefulSet {
 		},
 		Status: appsv1.StatefulSetStatus{
 			CurrentReplicas: opts.currentReps,
+			ReadyReplicas:   opts.currentReps,
 			CollisionCount:  &opts.collisions,
 		},
 	}

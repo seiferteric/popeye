@@ -4,7 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/derailed/popeye/internal"
 	"github.com/derailed/popeye/internal/cache"
+	"github.com/derailed/popeye/internal/client"
 	"github.com/derailed/popeye/internal/issues"
 	"github.com/derailed/popeye/pkg/config"
 	"github.com/stretchr/testify/assert"
@@ -83,6 +85,7 @@ func TestDPSanitize(t *testing.T) {
 			}),
 			issues: issues.Issues{
 				issues.New(
+					client.NewGVR("apps/v1/deployments"),
 					issues.Root,
 					config.WarnLevel,
 					`[POP-403] Deprecated Deployment API group "extensions/v1". Use "apps/v1" instead`,
@@ -105,7 +108,7 @@ func TestDPSanitize(t *testing.T) {
 				cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-500] Zero scale detected"),
+				issues.New(client.NewGVR("apps/v1/deployments"), issues.Root, config.WarnLevel, "[POP-500] Zero scale detected"),
 			},
 		},
 		"noAvailReps": {
@@ -125,32 +128,12 @@ func TestDPSanitize(t *testing.T) {
 				cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-501] Used? No available replicas found"),
-			},
-		},
-		"collisions": {
-			lister: makeDPLister(dpOpts{
-				rev:        "apps/v1",
-				reps:       1,
-				availReps:  1,
-				collisions: 1,
-				coOpts: coOpts{
-					image: "fred:0.0.1",
-					rcpu:  "10m",
-					rmem:  "10Mi",
-					lcpu:  "10m",
-					lmem:  "10Mi",
-				},
-				ccpu: "10m",
-				cmem: "10Mi",
-			}),
-			issues: issues.Issues{
-				issues.New(issues.Root, config.ErrorLevel, "[POP-502] ReplicaSet collisions detected (1)"),
+				issues.New(client.NewGVR("apps/v1/deployments"), issues.Root, config.ErrorLevel, "[POP-501] Unhealthy 1 desired but have 0 available"),
 			},
 		},
 	}
 
-	ctx := makeContext("deployment")
+	ctx := makeContext("apps/v1/deployments", "deployment")
 	for k := range uu {
 		u := uu[k]
 		t.Run(k, func(t *testing.T) {
@@ -180,8 +163,8 @@ func TestDPSanitizeUtilization(t *testing.T) {
 				cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New("i1", config.WarnLevel, "[POP-106] No resources requests/limits defined"),
-				issues.New("c1", config.WarnLevel, "[POP-106] No resources requests/limits defined"),
+				issues.New(client.NewGVR("containers"), "i1", config.WarnLevel, "[POP-106] No resources requests/limits defined"),
+				issues.New(client.NewGVR("containers"), "c1", config.WarnLevel, "[POP-106] No resources requests/limits defined"),
 			},
 		},
 		"cpuUnderBurstable": {
@@ -201,7 +184,7 @@ func TestDPSanitizeUtilization(t *testing.T) {
 				cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-503] At current load, CPU under allocated. Current:20m vs Requested:10m (200.00%)"),
+				issues.New(client.NewGVR("containers"), issues.Root, config.WarnLevel, "[POP-503] At current load, CPU under allocated. Current:20m vs Requested:10m (200.00%)"),
 			},
 		},
 		"cpuUnderGuaranteed": {
@@ -221,7 +204,7 @@ func TestDPSanitizeUtilization(t *testing.T) {
 				cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-503] At current load, CPU under allocated. Current:20m vs Requested:10m (200.00%)"),
+				issues.New(client.NewGVR("containers"), issues.Root, config.WarnLevel, "[POP-503] At current load, CPU under allocated. Current:20m vs Requested:10m (200.00%)"),
 			},
 		},
 		"cpuOverBustable": {
@@ -241,7 +224,7 @@ func TestDPSanitizeUtilization(t *testing.T) {
 				cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-504] At current load, CPU over allocated. Current:20m vs Requested:60m (300.00%)"),
+				issues.New(client.NewGVR("containers"), issues.Root, config.WarnLevel, "[POP-504] At current load, CPU over allocated. Current:20m vs Requested:60m (300.00%)"),
 			},
 		},
 		"cpuOverGuaranteed": {
@@ -261,7 +244,7 @@ func TestDPSanitizeUtilization(t *testing.T) {
 				cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-504] At current load, CPU over allocated. Current:20m vs Requested:60m (300.00%)"),
+				issues.New(client.NewGVR("containers"), issues.Root, config.WarnLevel, "[POP-504] At current load, CPU over allocated. Current:20m vs Requested:60m (300.00%)"),
 			},
 		},
 		"memUnderBurstable": {
@@ -281,7 +264,7 @@ func TestDPSanitizeUtilization(t *testing.T) {
 				cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-505] At current load, Memory under allocated. Current:20Mi vs Requested:10Mi (200.00%)"),
+				issues.New(client.NewGVR("containers"), issues.Root, config.WarnLevel, "[POP-505] At current load, Memory under allocated. Current:20Mi vs Requested:10Mi (200.00%)"),
 			},
 		},
 		"memUnderGuaranteed": {
@@ -301,7 +284,7 @@ func TestDPSanitizeUtilization(t *testing.T) {
 				cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-505] At current load, Memory under allocated. Current:20Mi vs Requested:10Mi (200.00%)"),
+				issues.New(client.NewGVR("containers"), issues.Root, config.WarnLevel, "[POP-505] At current load, Memory under allocated. Current:20Mi vs Requested:10Mi (200.00%)"),
 			},
 		},
 		"memOverBurstable": {
@@ -321,7 +304,7 @@ func TestDPSanitizeUtilization(t *testing.T) {
 				cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-506] At current load, Memory over allocated. Current:20Mi vs Requested:60Mi (300.00%)"),
+				issues.New(client.NewGVR("containers"), issues.Root, config.WarnLevel, "[POP-506] At current load, Memory over allocated. Current:20Mi vs Requested:60Mi (300.00%)"),
 			},
 		},
 		"memOverGuaranteed": {
@@ -341,13 +324,13 @@ func TestDPSanitizeUtilization(t *testing.T) {
 				cmem: "10Mi",
 			}),
 			issues: issues.Issues{
-				issues.New(issues.Root, config.WarnLevel, "[POP-506] At current load, Memory over allocated. Current:20Mi vs Requested:60Mi (300.00%)"),
+				issues.New(client.NewGVR("containers"), issues.Root, config.WarnLevel, "[POP-506] At current load, Memory over allocated. Current:20Mi vs Requested:60Mi (300.00%)"),
 			},
 		},
 	}
 
-	ctx := makeContext("deploy")
-	ctx = context.WithValue(ctx, PopeyeKey("OverAllocs"), true)
+	ctx := makeContext("containers", "deploy")
+	ctx = context.WithValue(ctx, internal.KeyOverAllocs, true)
 	for k := range uu {
 		u := uu[k]
 		t.Run(k, func(t *testing.T) {
@@ -401,7 +384,7 @@ func (d *dp) MEMResourceLimits() config.Allocations {
 	}
 }
 
-func (d *dp) ListPodsBySelector(sel *metav1.LabelSelector) map[string]*v1.Pod {
+func (d *dp) ListPodsBySelector(ns string, sel *metav1.LabelSelector) map[string]*v1.Pod {
 	return map[string]*v1.Pod{
 		"default/p1": makeFullPod(podOpts{
 			coOpts: d.opts.coOpts,
@@ -419,6 +402,10 @@ func (d *dp) PodCPULimit() float64 {
 
 func (d *dp) PodMEMLimit() float64 {
 	return 100
+}
+
+func (d *dp) ListServiceAccounts() map[string]*v1.ServiceAccount {
+	return nil
 }
 
 func (d *dp) ListPodsMetrics() map[string]*mv1beta1.PodMetrics {

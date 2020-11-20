@@ -13,10 +13,10 @@ popeye:
       overPercUtilization: 50
   # Excludes define rules to exampt resources from sanitization
   excludes:
-    clusterrolebinding:
+    rbac.authorization.k8s.io/v1/clusterrolebindings:
       - name: rx:system
       - name: rx:eks
-    clusterrole:
+    rbac.authorization.k8s.io/v1/clusterroles:
       - name: rx:eks
         codes:
           - 400
@@ -38,31 +38,31 @@ popeye:
       - name: cluster-admin
         codes:
           - 400
-    configmap:
+    rbac.authorization.k8s.io/v1/rolebindings:
       - name: rx:kube
-    daemonset:
+    rbac.authorization.k8s.io/v1/roles:
+      - name: rx:kube
+    apps/v1/daemonsets:
       - name: rx:kube-system
-    deployment:
+    apps/v1/deployments:
       - name: rx:kube-system
-    networkpolicy:
+    apps/v1/replicasets:
+      - name: rx:kube
+    networking.k8s.io/v1/networkpolicies:
       - name: rx:freddy
-    namespace:
-      - name: rx:kube
-    pod:
-      - name: rx:kube
-    podsecuritypolicy:
+    policy/v1beta1/podsecuritypolicies:
       - name: rx:eks
-    rolebinding:
+    v1/configmaps:
       - name: rx:kube
-    role:
+    v1/namespaces:
       - name: rx:kube
-    replicaset:
+    v1/pods:
       - name: rx:kube
-    serviceaccount:
+    v1/serviceaccounts:
       - name: rx:kube
-    secret:
+    v1/secrets:
       - name: rx:kube
-    service:
+    v1/services:
       - name: rx:kube
         codes:
           - 404
@@ -83,7 +83,7 @@ popeye:
     # Fail if more than 3 restarts on any pods
     restarts: 3
 
-  # Code specifies a custom severity level ie critical=1, warn=2, info=3
+  # Code specifies a custom severity level ie critical=3, warn=2, info=1
   codes:
     206:
       severity: 1

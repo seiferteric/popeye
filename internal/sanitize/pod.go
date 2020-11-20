@@ -4,10 +4,11 @@ import (
 	"context"
 
 	"github.com/derailed/popeye/internal"
+	"github.com/derailed/popeye/internal/client"
 	"github.com/derailed/popeye/internal/issues"
-	"github.com/derailed/popeye/internal/k8s"
 	v1 "k8s.io/api/core/v1"
 	pv1beta1 "k8s.io/api/policy/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	mv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 )
 
@@ -39,7 +40,7 @@ type (
 	// PodLister lists available pods.
 	PodLister interface {
 		ListPods() map[string]*v1.Pod
-		GetPod(sel map[string]string) *v1.Pod
+		GetPod(ns string, sel map[string]string) *v1.Pod
 	}
 
 	// PodMXLister list available pods.
@@ -76,18 +77,51 @@ func (p *Pod) Sanitize(ctx context.Context) error {
 
 		p.checkStatus(ctx, po)
 		p.checkContainerStatus(ctx, po)
-		p.checkContainers(ctx, po)
-		p.checkPdb(ctx, po.ObjectMeta.Labels)
+		p.checkContainers(ctx, fqn, po)
+
+		p.checkOwnedByAnything(ctx, po.OwnerReferences)
+
+		if !ownedByDaemonSet(po) {
+			p.checkPdb(ctx, po.ObjectMeta.Labels)
+		}
 		p.checkSecure(ctx, po.Spec)
-		pmx, cmx := mx[fqn], k8s.ContainerMetrics{}
+		pmx, cmx := mx[fqn], client.ContainerMetrics{}
 		containerMetrics(pmx, cmx)
 		p.checkUtilization(ctx, po, cmx)
 
-		if p.Config.ExcludeFQN(internal.MustExtractSection(ctx), fqn) {
+		if p.NoConcerns(fqn) && p.Config.ExcludeFQN(internal.MustExtractSectionGVR(ctx), fqn) {
 			p.ClearOutcome(fqn)
 		}
 	}
 	return nil
+}
+
+func ownedByDaemonSet(po *v1.Pod) bool {
+	for _, o := range po.OwnerReferences {
+		if o.Kind == "DaemonSet" {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Pod) checkOwnedByAnything(ctx context.Context, ownerRefs []metav1.OwnerReference) {
+	if len(ownerRefs) == 0 {
+		p.AddCode(ctx, 208)
+		return
+	}
+
+	controlled := false
+	for _, or := range ownerRefs {
+		if *or.Controller {
+			controlled = true
+			break
+		}
+	}
+
+	if !controlled {
+		p.AddCode(ctx, 208)
+	}
 }
 
 func (p *Pod) checkPdb(ctx context.Context, labels map[string]string) {
@@ -96,7 +130,7 @@ func (p *Pod) checkPdb(ctx context.Context, labels map[string]string) {
 	}
 }
 
-func (p *Pod) checkUtilization(ctx context.Context, po *v1.Pod, cmx k8s.ContainerMetrics) {
+func (p *Pod) checkUtilization(ctx context.Context, po *v1.Pod, cmx client.ContainerMetrics) {
 	if len(cmx) == 0 {
 		return
 	}
@@ -129,13 +163,13 @@ func (p *Pod) checkSecure(ctx context.Context, spec v1.PodSpec) {
 	for _, co := range spec.InitContainers {
 		if !checkCOSecurityContext(co) && !podSec {
 			victims++
-			p.AddSubCode(internal.WithGroup(ctx, co.Name), 306)
+			p.AddSubCode(internal.WithGroup(ctx, client.NewGVR("containers"), co.Name), 306)
 		}
 	}
 	for _, co := range spec.Containers {
 		if !checkCOSecurityContext(co) && !podSec {
 			victims++
-			p.AddSubCode(internal.WithGroup(ctx, co.Name), 306)
+			p.AddSubCode(internal.WithGroup(ctx, client.NewGVR("containers"), co.Name), 306)
 		}
 	}
 	if victims > 0 && !podSec {
@@ -173,13 +207,18 @@ func hasCoNonRootUser(sec *v1.SecurityContext) bool {
 	return false
 }
 
-func (p *Pod) checkContainers(ctx context.Context, po *v1.Pod) {
+func (p *Pod) checkContainers(ctx context.Context, fqn string, po *v1.Pod) {
 	co := NewContainer(internal.MustExtractFQN(ctx), p)
+	gvr := internal.MustExtractSectionGVR(ctx)
 	for _, c := range po.Spec.InitContainers {
-		co.sanitize(ctx, c, false)
+		if !p.Config.ExcludeContainer(gvr, fqn, c.Name) {
+			co.sanitize(ctx, c, false)
+		}
 	}
 	for _, c := range po.Spec.Containers {
-		co.sanitize(ctx, c, !isPartOfJob(po))
+		if !p.Config.ExcludeContainer(gvr, fqn, c.Name) {
+			co.sanitize(ctx, c, !isPartOfJob(po))
+		}
 	}
 }
 
@@ -208,14 +247,14 @@ func (p *Pod) checkStatus(ctx context.Context, po *v1.Pod) {
 // ----------------------------------------------------------------------------
 // Helpers...
 
-func containerMetrics(pmx *mv1beta1.PodMetrics, mx k8s.ContainerMetrics) {
+func containerMetrics(pmx *mv1beta1.PodMetrics, mx client.ContainerMetrics) {
 	// No metrics -> Bail!
 	if pmx == nil {
 		return
 	}
 
 	for _, co := range pmx.Containers {
-		mx[co.Name] = k8s.Metrics{
+		mx[co.Name] = client.Metrics{
 			CurrentCPU: *co.Usage.Cpu(),
 			CurrentMEM: *co.Usage.Memory(),
 		}
