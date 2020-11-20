@@ -67,7 +67,7 @@ func (p *PopeyePlugin) GetHappyCLIVisibilityReport() {
 	if err := p.Pop.Init(); err != nil {
 		return
 	}
-	if err := p.Pop.Sanitize(); err != nil {
+	if _,err := p.Pop.Sanitize(); err != nil {
 		return
 	}
 
@@ -78,7 +78,7 @@ func (p *PopeyePlugin) GettExpeditionCLIAndUIVisibilityReport() string {
 	if err := p.Pop.Init(); err != nil {
 		return ""
 	}
-	if err := p.Pop.Sanitize(); err != nil {
+	if _,err := p.Pop.Sanitize(); err != nil {
 		return ""
 	}
 
@@ -109,7 +109,7 @@ func (p *PopeyePlugin) GetExpeditionCLIAndUIVisibilityErrors() ([]*Error, int, i
 	if err := p.Pop.Init(); err != nil {
 		return nil, 0, 0
 	}
-	if err := p.Pop.Sanitize(); err != nil {
+	if _,err := p.Pop.Sanitize(); err != nil {
 		return nil, 0, 0
 	}
 	p.Pop.Builder.ToJSON()
@@ -156,7 +156,7 @@ func (p *PopeyePlugin) GetHappyCLIVisibilityErrors(w *tablewriter.Table) {
 	if err := p.Pop.Init(); err != nil {
 		return
 	}
-	if err := p.Pop.Sanitize(); err != nil {
+	if _,err := p.Pop.Sanitize(); err != nil {
 		return
 	}
 	p.Pop.Builder.ToJSON()

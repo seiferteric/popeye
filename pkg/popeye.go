@@ -40,8 +40,6 @@ var (
 	ErrUnknownS3BucketProtocol = errors.New("invalid S3 URI: hostname not valid")
 )
 
-type scrubFn func(context.Context, *scrub.Cache, *issues.Codes) scrub.Sanitizer
-
 type run struct {
 	outcome issues.Outcome
 	gvr     client.GVR
@@ -56,24 +54,13 @@ type Popeye struct {
 	flags        *config.Flags
 	builder      *report.Builder
 	aliases      *internal.Aliases
+
+	Builder      *report.Builder
+	Config       *config.Config
 }
 
 type (
 	scrubFn func(context.Context, *scrub.Cache, *issues.Codes) scrub.Sanitizer
-
-	// Popeye a kubernetes sanitizer.
-	Popeye struct {
-		client       *k8s.Client
-		config       *config.Config
-		outputTarget io.ReadWriteCloser
-		log          *zerolog.Logger
-		flags        *config.Flags
-		builder      *report.Builder
-		aliases      *internal.Aliases
-		Builder      *report.Builder
-		Config       *config.Config
-		Client       *k8s.Client
-	}
 )
 
 // NewPopeye returns a new sanitizer.
@@ -92,7 +79,6 @@ func NewPopeye(flags *config.Flags, log *zerolog.Logger) (*Popeye, error) {
 	}
 	p.Builder = p.builder
 	p.Config = p.config
-	p.Client = p.client
 
 	return &p, nil
 }
